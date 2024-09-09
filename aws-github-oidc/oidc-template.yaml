@@ -1,6 +1,17 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: GitHub OIDC for when GitHub wants to communicate with AWS.
+
 Resources:
+
+  # Create the OIDC provider first
+  GitHubActionsOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - d89e3bd43d5d909b47a18977aa9d5ce36cee184c # Ensure this is correct for GitHub
+      Url: https://token.actions.githubusercontent.com
 
   # This is the bare-bones role.
   GitHubActionsRole:
@@ -12,7 +23,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+              Federated: !Ref GitHubActionsOidcProvider
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringLike:
@@ -34,22 +45,19 @@ Resources:
                   # Replace with your unique s3 bucket name
                   - arn:aws:s3:::my-oidc-bucket-187
                   - arn:aws:s3:::my-oidc-bucket-187/*
-      
-      ## Allow assuming the role
-        - PolicyName: AssumeRolePolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action: sts:AssumeRoleWithWebIdentity
-                Resource: !GetAtt GitHubActionsRole.Arn
 
-  # This is the OIDC provider hookup itself. This tells AWS to delegate authN GitHub
-  GitHubActionsOidcProvider:
-    Type: AWS::IAM::OIDCProvider
+  # Separate this policy from the role to avoid dependency issues.
+  GitHubActionsPolicy:
+    Type: AWS::IAM::Policy
     Properties:
-      ClientIdList:
-        - sts.amazonaws.com
-      ThumbprintList:
-        - d89e3bd43d5d909b47a18977aa9d5ce36cee184c # Ensure this is correct for GitHub
-      Url: https://token.actions.githubusercontent.com
+      PolicyName: GitHubActionsPolicy
+      Roles:
+        - Ref: GitHubActionsRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AssumeRolePolicy
+            Effect: Allow
+            Action:
+              - sts:AssumeRoleWithWebIdentity
+            Resource: !GetAtt GitHubActionsRole.Arn
