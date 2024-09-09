@@ -1,4 +1,3 @@
----
 AWSTemplateFormatVersion: 2010-09-09
 Description: GitHub OIDC for when GitHub wants to communicate with AWS.
 Resources:
@@ -18,19 +17,10 @@ Resources:
             Condition:
               StringLike:
                 ## THESE ARE CASE SENSITIVE!
-                'token.actions.githubusercontent.com:sub': ['repo:pjv93/sample-app:*']
+                'token.actions.githubusercontent.com:sub': ['repo:pjv93/sample-app:*']  # Ensure the correct repo format
               StringEquals:
                 'token.actions.githubusercontent.com:aud': sts.amazonaws.com
       Policies:
-        - PolicyName: OidcSafetyPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Sid: OidcSafeties
-                Effect: Deny
-                Action:
-                  - sts:AssumeRole
-                Resource: "*"
         - PolicyName: GitHubActionsDeployPolicy
           PolicyDocument:
             Version: '2012-10-17'
@@ -44,6 +34,15 @@ Resources:
                   # Replace with your unique s3 bucket name
                   - arn:aws:s3:::my-oidc-bucket-187
                   - arn:aws:s3:::my-oidc-bucket-187/*
+      
+      ## Allow assuming the role
+        - PolicyName: AssumeRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRoleWithWebIdentity
+                Resource: !GetAtt GitHubActionsRole.Arn
 
   # This is the OIDC provider hookup itself. This tells AWS to delegate authN GitHub
   GitHubActionsOidcProvider:
@@ -52,7 +51,5 @@ Resources:
       ClientIdList:
         - sts.amazonaws.com
       ThumbprintList:
-        - d89e3bd43d5d909b47a18977aa9d5ce36cee184c
-
-
+        - d89e3bd43d5d909b47a18977aa9d5ce36cee184c # Ensure this is correct for GitHub
       Url: https://token.actions.githubusercontent.com
