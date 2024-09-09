@@ -18,7 +18,7 @@ Resources:
             Condition:
               StringLike:
                 ## THESE ARE CASE SENSITIVE!
-                'token.actions.githubusercontent.com:sub': ['repo:{replace_me_with_your-repo-or-org}/*']
+                'token.actions.githubusercontent.com:sub': ['repo:sample-app/*']
               StringEqualsIgnoreCase:
                 'token.actions.githubusercontent.com:aud': sts.amazonaws.com
       Policies:
@@ -41,8 +41,8 @@ Resources:
                   - s3:PutObject
                 Resource:
                   # Replace with your unique s3 bucket name
-                  - arn:aws:s3:::my-demo-s3-bucket
-                  - arn:aws:s3:::my-demo-s3-bucket/*
+                  - arn:aws:s3:::my-oidc-bucket-187
+                  - arn:aws:s3:::my-oidc-bucket-187/*
 
   # This is the OIDC provider hookup itself. This tells AWS to delegate authN GitHub
   GitHubActionsOidcProvider:
