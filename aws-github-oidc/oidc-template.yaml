@@ -30,14 +30,14 @@ Resources:
                 'token.actions.githubusercontent.com:sub': ['repo:pjv93/sample-app:*']
               StringEquals:
                 'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+      ManagedPolicyArns:
+        - !Ref GitHubActionsManagedPolicy
 
   # IAM Managed Policy for the GitHub Actions Role
   GitHubActionsManagedPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
       ManagedPolicyName: GitHub_Actions_Policy
-      # Removed: Roles:
-      #   - Ref: GitHubActionsRole
       PolicyDocument:
         Version: '2012-10-17'
         Statement:        
@@ -50,11 +50,3 @@ Resources:
               # Replace with your unique S3 bucket name
               - arn:aws:s3:::my-oidc-bucket-187
               - arn:aws:s3:::my-oidc-bucket-187/*
-
-  # Policy Attachment
-  GitHubActionsPolicyAttachment:
-    Type: AWS::IAM::PolicyAttachment
-    Properties:
-      PolicyArn: !Ref GitHubActionsManagedPolicy
-      Roles: 
-        - !Ref GitHubActionsRole
