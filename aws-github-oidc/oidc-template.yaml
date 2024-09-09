@@ -3,17 +3,17 @@ Description: GitHub OIDC for when GitHub wants to communicate with AWS.
 
 Resources:
 
-  # Create the OIDC provider first
+  # OIDC Provider definition
   GitHubActionsOidcProvider:
     Type: AWS::IAM::OIDCProvider
     Properties:
       ClientIdList:
         - sts.amazonaws.com
       ThumbprintList:
-        - d89e3bd43d5d909b47a18977aa9d5ce36cee184c # Ensure this is correct for GitHub
+        - d89e3bd43d5d909b47a18977aa9d5ce36cee184c  # Correct GitHub thumbprint
       Url: https://token.actions.githubusercontent.com
 
-  # This is the bare-bones role.
+  # IAM Role for GitHub Actions
   GitHubActionsRole:
     Type: AWS::IAM::Role
     Properties:
@@ -27,37 +27,26 @@ Resources:
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringLike:
-                ## THESE ARE CASE SENSITIVE!
-                'token.actions.githubusercontent.com:sub': ['repo:pjv93/sample-app:*']  # Ensure the correct repo format
+                'token.actions.githubusercontent.com:sub': ['repo:pjv93/sample-app:*']
               StringEquals:
                 'token.actions.githubusercontent.com:aud': sts.amazonaws.com
-      Policies:
-        - PolicyName: GitHubActionsDeployPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:        
-              - Sid: AllowS3Actions
-                Effect: Allow
-                Action:
-                  - s3:ListBuckets
-                  - s3:PutObject
-                Resource:
-                  # Replace with your unique s3 bucket name
-                  - arn:aws:s3:::my-oidc-bucket-187
-                  - arn:aws:s3:::my-oidc-bucket-187/*
 
-  # Separate this policy from the role to avoid dependency issues.
-  GitHubActionsPolicy:
-    Type: AWS::IAM::Policy
+  # IAM Managed Policy for the GitHub Actions Role
+  GitHubActionsManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
     Properties:
-      PolicyName: GitHubActionsPolicy
+      ManagedPolicyName: GitHub_Actions_Policy
       Roles:
         - Ref: GitHubActionsRole
       PolicyDocument:
         Version: '2012-10-17'
-        Statement:
-          - Sid: AssumeRolePolicy
+        Statement:        
+          - Sid: AllowS3Actions
             Effect: Allow
             Action:
-              - sts:AssumeRoleWithWebIdentity
-            Resource: !GetAtt GitHubActionsRole.Arn
+              - s3:ListBuckets
+              - s3:PutObject
+            Resource:
+              # Replace with your unique S3 bucket name
+              - arn:aws:s3:::my-oidc-bucket-187
+              - arn:aws:s3:::my-oidc-bucket-187/*
