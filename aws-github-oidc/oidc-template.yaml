@@ -38,7 +38,7 @@ Resources:
               - Sid: AllowS3Actions
                 Effect: Allow
                 Action: [
-                  - s3:ListBuckets
+                  - s3:ListBuckets,
                   - s3:PutObject
                   ]
                 Resource:
