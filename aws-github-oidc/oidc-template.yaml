@@ -37,10 +37,9 @@ Resources:
             Statement:        
               - Sid: AllowS3Actions
                 Effect: Allow
-                Action: [
-                  - s3:ListBuckets,
+                Action:
+                  - s3:ListBuckets
                   - s3:PutObject
-                  ]
                 Resource:
                   # Replace with your unique s3 bucket name
                   - arn:aws:s3:::my-oidc-bucket-187
