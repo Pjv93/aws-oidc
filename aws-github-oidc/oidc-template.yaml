@@ -18,8 +18,8 @@ Resources:
             Condition:
               StringLike:
                 ## THESE ARE CASE SENSITIVE!
-                'token.actions.githubusercontent.com:sub': ['repo:pjv93/sample-app/']
-              StringEqualsIgnoreCase:
+                'token.actions.githubusercontent.com:sub': ['repo:pjv93/sample-app:*']
+              StringEquals:
                 'token.actions.githubusercontent.com:aud': sts.amazonaws.com
       Policies:
         - PolicyName: OidcSafetyPolicy
@@ -37,8 +37,10 @@ Resources:
             Statement:        
               - Sid: AllowS3Actions
                 Effect: Allow
-                Action:
+                Action: [
+                  - s3:ListBuckets
                   - s3:PutObject
+                  ]
                 Resource:
                   # Replace with your unique s3 bucket name
                   - arn:aws:s3:::my-oidc-bucket-187
@@ -51,5 +53,7 @@ Resources:
       ClientIdList:
         - sts.amazonaws.com
       ThumbprintList:
-        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - d89e3bd43d5d909b47a18977aa9d5ce36cee184c
+
+
       Url: https://token.actions.githubusercontent.com
