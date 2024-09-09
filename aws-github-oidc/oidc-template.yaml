@@ -18,7 +18,7 @@ Resources:
             Condition:
               StringLike:
                 ## THESE ARE CASE SENSITIVE!
-                'token.actions.githubusercontent.com:sub': ['repo:sample-app/*']
+                'token.actions.githubusercontent.com:sub': ['repo:pjv93/sample-app/']
               StringEqualsIgnoreCase:
                 'token.actions.githubusercontent.com:aud': sts.amazonaws.com
       Policies:
