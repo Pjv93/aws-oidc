@@ -48,5 +48,5 @@ Resources:
               - s3:PutObject
             Resource:
               # Replace with your unique S3 bucket name
-              - arn:aws:s3:::my-oidc-bucket-187
-              - arn:aws:s3:::my-oidc-bucket-187/*
+              - arn:aws:s3:::arn:aws:s3:::pjv-oidc-bucket-111
+              - arn:aws:s3:::arn:aws:s3:::pjv-oidc-bucket-111/*
