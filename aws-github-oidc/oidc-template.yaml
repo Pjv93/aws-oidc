@@ -46,7 +46,7 @@ Resources:
           - Sid: AllowS3Actions
             Effect: Allow
             Action:
-              - s3:ListBuckets
+              - s3:ListBucket
               - s3:PutObject
             Resource:
               # Replace with your unique S3 bucket name
