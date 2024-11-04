@@ -13,6 +13,7 @@ Resources:
         - d89e3bd43d5d909b47a18977aa9d5ce36cee184c  # Correct GitHub thumbprint
       Url: https://token.actions.githubusercontent.com
 
+
   # IAM Role for GitHub Actions
   GitHubActionsRole:
     Type: AWS::IAM::Role
@@ -27,12 +28,12 @@ Resources:
             Action: "sts:AssumeRoleWithWebIdentity"
             Condition:
               StringEquals:
-                "token.actions.githubusercontent.com:sub":
-                  - "repo:pjv93/GitHub-Action-OIDCConnect:pull_request"
-                  - "repo:pjv93/GitHub-Action-OIDCConnect:ref:refs/heads/main"
                 "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+              StringLike:
+                "token.actions.githubusercontent.com:sub": "repo:Pjv93/sample-app:*"
       ManagedPolicyArns:
         - !Ref GitHubActionsManagedPolicy
+
 
   # IAM Managed Policy for the GitHub Actions Role
   GitHubActionsManagedPolicy:
