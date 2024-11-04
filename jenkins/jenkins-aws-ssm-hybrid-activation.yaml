@@ -1,5 +1,29 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Jenkins AWS SSM Hybrid Activation with EKS and ECR access'
+Description: |
+  Jenkins AWS SSM Hybrid Activation with EKS and ECR access
+
+  This template sets up the necessary AWS resources for Jenkins servers to securely 
+  interact with AWS services using SSM hybrid activations.
+
+  Parameters:
+  - RegistrationLimit: The number of servers that can register using this activation (default: 1)
+
+  After deploying this stack, use the following shell script to set up your Jenkins server(s):
+  [https://github.com/Pjv93/aws-security/blob/main/jenkins/install-ssm.sh]
+
+  Instructions:
+  1. Deploy this CloudFormation stack.
+  2. Note the ActivationId and ActivationCode from the stack outputs.
+  3. Run the provided shell script on each Jenkins server, entering the AWS region, 
+     ActivationId, and ActivationCode when prompted.
+
+Parameters:
+  RegistrationLimit:
+    Type: Number
+    Default: 1
+    Description: The number of servers that can register using this activation
+    MinValue: 1
+    MaxValue: 100
 
 Resources:
   # SSM Service Role for hybrid activations
@@ -144,10 +168,11 @@ Resources:
                   if event['RequestType'] == 'Create':
                       ssm_role = os.environ['SSM_SERVICE_ROLE']
                       role_name = ssm_role.split('/')[-1]  # Extract role name from ARN
+                      registration_limit = int(os.environ['REGISTRATION_LIMIT'])
                       response = ssm.create_activation(
                           Description='Activation for Jenkins Server',
                           IamRole=role_name,
-                          RegistrationLimit=1
+                          RegistrationLimit=registration_limit
                       )
                       cfnresponse.send(event, context, cfnresponse.SUCCESS, {
                           'ActivationId': response['ActivationId'],
@@ -166,6 +191,7 @@ Resources:
       Environment:
         Variables:
           SSM_SERVICE_ROLE: !GetAtt SSMServiceRole.Arn
+          REGISTRATION_LIMIT: !Ref RegistrationLimit
 
   # Custom resource to trigger Lambda function
   SSMActivation:
@@ -186,20 +212,21 @@ Outputs:
   ActivationCode:
     Description: 'SSM Activation Code'
     Value: !GetAtt SSMActivation.ActivationCode
+  RegistrationLimit:
+    Description: 'Number of servers that can register with this activation'
+    Value: !Ref RegistrationLimit
 
-
-
-# Note: This template creates the necessary AWS resources for a Jenkins server 
+# Note: This template creates the necessary AWS resources for Jenkins servers 
 # to securely interact with AWS services using SSM hybrid activations.
 #
 # Key components:
 # 1. SSM Service Role: Allows the on-premises Jenkins server to communicate with AWS SSM.
 # 2. Jenkins Role: Provides permissions for Jenkins to interact with S3, ECR, and EKS.
-# 3. Lambda function: Creates the SSM activation for the Jenkins server.
+# 3. Lambda function: Creates the SSM activation for the Jenkins server(s).
 #
 # To use this template:
 # 1. Deploy the CloudFormation stack.
-# 2. Use the ActivationId and ActivationCode outputs to register your Jenkins server with SSM.
+# 2. Use the ActivationId and ActivationCode outputs to register your Jenkins server(s) with SSM.
 # 3. Configure your Jenkins pipelines to assume the JenkinsAccessRole when interacting with AWS services.
 #
 # Remember to review and adjust the permissions in the JenkinsRole as needed for your specific use case,
