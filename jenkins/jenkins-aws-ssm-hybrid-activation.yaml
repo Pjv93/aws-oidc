@@ -1,20 +1,3 @@
-# Note: This template creates the necessary AWS resources for a Jenkins server 
-# to securely interact with AWS services using SSM hybrid activations.
-#
-# Key components:
-# 1. SSM Service Role: Allows the on-premises Jenkins server to communicate with AWS SSM.
-# 2. Jenkins Role: Provides permissions for Jenkins to interact with S3, ECR, and EKS.
-# 3. Lambda function: Creates the SSM activation for the Jenkins server.
-#
-# To use this template:
-# 1. Deploy the CloudFormation stack.
-# 2. Use the ActivationId and ActivationCode outputs to register your Jenkins server with SSM.
-# 3. Configure your Jenkins pipelines to assume the JenkinsAccessRole when interacting with AWS services.
-#
-# Remember to review and adjust the permissions in the JenkinsRole as needed for your specific use case,
-# always following the principle of least privilege. You may need to add or modify permissions
-# based on the specific AWS services your CI/CD pipelines interact with.
-
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Jenkins AWS SSM Hybrid Activation with EKS and ECR access'
 
@@ -203,3 +186,22 @@ Outputs:
   ActivationCode:
     Description: 'SSM Activation Code'
     Value: !GetAtt SSMActivation.ActivationCode
+
+
+
+# Note: This template creates the necessary AWS resources for a Jenkins server 
+# to securely interact with AWS services using SSM hybrid activations.
+#
+# Key components:
+# 1. SSM Service Role: Allows the on-premises Jenkins server to communicate with AWS SSM.
+# 2. Jenkins Role: Provides permissions for Jenkins to interact with S3, ECR, and EKS.
+# 3. Lambda function: Creates the SSM activation for the Jenkins server.
+#
+# To use this template:
+# 1. Deploy the CloudFormation stack.
+# 2. Use the ActivationId and ActivationCode outputs to register your Jenkins server with SSM.
+# 3. Configure your Jenkins pipelines to assume the JenkinsAccessRole when interacting with AWS services.
+#
+# Remember to review and adjust the permissions in the JenkinsRole as needed for your specific use case,
+# always following the principle of least privilege. You may need to add or modify permissions
+# based on the specific AWS services your CI/CD pipelines interact with.
