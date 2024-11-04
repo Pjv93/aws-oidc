@@ -23,14 +23,24 @@ Resources:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
+            # Specify who is allowed to assume this role
             Principal:
+              # The Federated identity is the GitHub OIDC provider
+              # !Sub is used to dynamically insert the AWS account ID
               Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            # Allow the AssumeRoleWithWebIdentity action
             Action: "sts:AssumeRoleWithWebIdentity"
+            # Conditions under which the role can be assumed
             Condition:
+              # Ensure the audience claim matches AWS STS
               StringEquals:
                 "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+              # Specify which GitHub repository is allowed to assume this role
               StringLike:
+                # Replace 'Pjv93/sample-app' with your actual GitHub repository name
+                # The '*' allows any branch or pull request from this repo
                 "token.actions.githubusercontent.com:sub": "repo:Pjv93/sample-app:*"
+      # Attach the managed policy to this role
       ManagedPolicyArns:
         - !Ref GitHubActionsManagedPolicy
 
@@ -43,6 +53,10 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
+          # NOTE: This is an example policy. Customize these permissions based on your specific needs.
+          # You can add, remove, or modify these permissions to suit your GitHub Actions requirements.
+          
+          # Example: Permissions for S3 bucket-level operations
           - Sid: AllowS3Actions
             Effect: Allow
             Action:
@@ -50,7 +64,10 @@ Resources:
               - s3:GetBucketLocation
               - s3:ListBucketMultipartUploads
             Resource:
+              # Replace with your actual S3 bucket ARN
               - arn:aws:s3:::pjv-oidc-bucket-111
+          
+          # Example: Permissions for S3 object-level operations
           - Sid: AllowS3ObjectActions
             Effect: Allow
             Action:
@@ -60,5 +77,30 @@ Resources:
               - s3:ListMultipartUploadParts
               - s3:AbortMultipartUpload
             Resource:
+              # Replace with your actual S3 bucket ARN and include '/*' for object-level permissions
               - arn:aws:s3:::pjv-oidc-bucket-111/*
 
+          # You can add more permission blocks here for other AWS services as needed.
+          # For example, you might add permissions for ECR, as shown below:
+
+          # # Example: Permissions for Amazon ECR (Elastic Container Registry)
+          # - Sid: AllowECRActions
+          #   Effect: Allow
+          #   Action:
+          #     # Allows retrieving an authorization token
+          #     - ecr:GetAuthorizationToken
+          #     # Permissions for pushing images
+          #     - ecr:InitiateLayerUpload
+          #     - ecr:UploadLayerPart
+          #     - ecr:CompleteLayerUpload
+          #     - ecr:PutImage
+          #     # Permissions for pulling images
+          #     - ecr:BatchCheckLayerAvailability
+          #     - ecr:GetDownloadUrlForLayer
+          #     - ecr:BatchGetImage
+          #   Resource: '*'
+          #   # For stricter security, consider specifying the ARN of your ECR repository:
+          #   # Resource: arn:aws:ecr:region:account-id:repository/repository-name
+
+          # Always follow the principle of least privilege:
+          # Only grant the permissions that are absolutely necessary for your workflow.
