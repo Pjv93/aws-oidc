@@ -19,17 +19,18 @@ Resources:
     Properties:
       RoleName: GitHub_Actions_Role
       AssumeRolePolicyDocument:
-        Version: 2012-10-17
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              Federated: !Ref GitHubActionsOidcProvider
-            Action: sts:AssumeRoleWithWebIdentity
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: "sts:AssumeRoleWithWebIdentity"
             Condition:
-              StringLike:
-                'token.actions.githubusercontent.com:sub': ['repo:pjv93/sample-app:*']
               StringEquals:
-                'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+                "token.actions.githubusercontent.com:sub":
+                  - "repo:pjv93/GitHub-Action-OIDCConnect:pull_request"
+                  - "repo:pjv93/GitHub-Action-OIDCConnect:ref:refs/heads/main"
+                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
       ManagedPolicyArns:
         - !Ref GitHubActionsManagedPolicy
 
