@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM Roles for Jenkins with SSM Activation via Lambda'
+
+Resources:
+  SSMServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: JenkinsSSMServiceRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ssm.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+
+  JenkinsRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: JenkinsAccessRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ssm.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: JenkinsS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:ListBucket'
+                  - 's3:GetBucketLocation'
+                Resource: 'arn:aws:s3:::name-of-your-bucket'
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObject'
+                  - 's3:DeleteObject'
+                Resource: 'arn:aws:s3:::name-of-your-bucket/*'
+
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: LambdaSSMActivation
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:CreateActivation'
+                  - 'ssm:DeleteActivation'
+                  - 'iam:PassRole'
+                Resource: '*'
+        - PolicyName: LambdaBasicExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: 'arn:aws:logs:*:*:*'
+
+  SSMActivationLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import cfnresponse
+          import boto3
+          import os
+
+          def handler(event, context):
+              ssm = boto3.client('ssm')
+              
+              try:
+                  if event['RequestType'] == 'Create':
+                      ssm_role = os.environ['SSM_SERVICE_ROLE']
+                      role_name = ssm_role.split('/')[-1]  # Extract role name from ARN
+                      response = ssm.create_activation(
+                          Description='Activation for Jenkins Server',
+                          IamRole=role_name,
+                          RegistrationLimit=1
+                      )
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                          'ActivationId': response['ActivationId'],
+                          'ActivationCode': response['ActivationCode']
+                      })
+                  elif event['RequestType'] == 'Delete':
+                      # You might want to delete the activation here
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  else:
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+      Runtime: python3.8
+      Timeout: 60
+      Environment:
+        Variables:
+          SSM_SERVICE_ROLE: !GetAtt SSMServiceRole.Arn
+
+  SSMActivation:
+    Type: 'Custom::SSMActivation'
+    Properties:
+      ServiceToken: !GetAtt SSMActivationLambda.Arn
+
+Outputs:
+  SSMServiceRoleArn:
+    Description: 'ARN of the SSM Service Role'
+    Value: !GetAtt SSMServiceRole.Arn
+  JenkinsRoleArn:
+    Description: 'ARN of the Jenkins IAM Role'
+    Value: !GetAtt JenkinsRole.Arn
+  ActivationId:
+    Description: 'SSM Activation ID'
+    Value: !GetAtt SSMActivation.ActivationId
+  ActivationCode:
+    Description: 'SSM Activation Code'
+    Value: !GetAtt SSMActivation.ActivationCode
