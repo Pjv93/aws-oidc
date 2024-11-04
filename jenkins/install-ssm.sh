@@ -31,9 +31,25 @@ read -p "Enter Activation ID: " activation_id
 # Detect system architecture
 ARCH=$(uname -m)
 
-# Uninstall any existing AWS CLI installation
-sudo rm -rf /usr/local/aws-cli || true
-sudo rm /usr/local/bin/aws || true
+# Detect the package manager and uninstall AWS CLI
+if command -v yum >/dev/null 2>&1; then
+    sudo yum remove -y awscli
+elif command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get remove -y awscli
+elif command -v brew >/dev/null 2>&1; then
+    brew uninstall awscli
+else
+    echo "Unable to detect package manager. Attempting manual removal."
+    sudo rm -rf /usr/local/aws-cli
+    sudo rm /usr/local/bin/aws
+fi
+
+# Remove AWS CLI v2 if installed manually
+sudo rm -rf /usr/local/aws-cli
+sudo rm -f /usr/local/bin/aws
+
+# Remove symlinks
+sudo rm -f /usr/bin/aws
 
 # Install AWS CLI v2 based on architecture if not already installed
 if ! which aws > /dev/null 2>&1; then
