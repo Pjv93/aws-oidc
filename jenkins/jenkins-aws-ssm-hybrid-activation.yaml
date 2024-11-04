@@ -1,7 +1,25 @@
+# Note: This template creates the necessary AWS resources for a Jenkins server 
+# to securely interact with AWS services using SSM hybrid activations.
+#
+# Key components:
+# 1. SSM Service Role: Allows the on-premises Jenkins server to communicate with AWS SSM.
+# 2. Jenkins Role: Provides permissions for Jenkins to interact with S3, ECR, and EKS.
+# 3. Lambda function: Creates the SSM activation for the Jenkins server.
+#
+# To use this template:
+# 1. Deploy the CloudFormation stack.
+# 2. Use the ActivationId and ActivationCode outputs to register your Jenkins server with SSM.
+# 3. Configure your Jenkins pipelines to assume the JenkinsAccessRole when interacting with AWS services.
+#
+# Remember to review and adjust the permissions in the JenkinsRole as needed for your specific use case,
+# always following the principle of least privilege. You may need to add or modify permissions
+# based on the specific AWS services your CI/CD pipelines interact with.
+
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'IAM Roles for Jenkins with SSM Activation via Lambda'
+Description: 'Jenkins AWS SSM Hybrid Activation with EKS and ECR access'
 
 Resources:
+  # SSM Service Role for hybrid activations
   SSMServiceRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -16,6 +34,7 @@ Resources:
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
 
+  # Jenkins Role with permissions for AWS services
   JenkinsRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -28,6 +47,8 @@ Resources:
               Service: ssm.amazonaws.com
             Action: 'sts:AssumeRole'
       Policies:
+        # S3 access policy
+        # Modify this section to match your S3 bucket name and required permissions
         - PolicyName: JenkinsS3Access
           PolicyDocument:
             Version: '2012-10-17'
@@ -36,14 +57,59 @@ Resources:
                 Action:
                   - 's3:ListBucket'
                   - 's3:GetBucketLocation'
-                Resource: 'arn:aws:s3:::name-of-your-bucket'
+                Resource: 'arn:aws:s3:::pjv-oidc-bucket-111'
               - Effect: Allow
                 Action:
                   - 's3:PutObject'
                   - 's3:GetObject'
                   - 's3:DeleteObject'
-                Resource: 'arn:aws:s3:::name-of-your-bucket/*'
+                Resource: 'arn:aws:s3:::pjv-oidc-bucket-111/*'
+        
+        # ECR access policy
+        # This allows Jenkins to push and pull Docker images from ECR
+        # Modify if you need more specific permissions or to restrict to certain repositories
+        - PolicyName: JenkinsECRAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecr:GetAuthorizationToken'
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:BatchGetImage'
+                  - 'ecr:InitiateLayerUpload'
+                  - 'ecr:UploadLayerPart'
+                  - 'ecr:CompleteLayerUpload'
+                  - 'ecr:PutImage'
+                Resource: '*'
+        
+        # EKS access policy
+        # This allows Jenkins to interact with EKS clusters
+        # Modify the Resource ARN if you want to restrict access to specific clusters
+        - PolicyName: JenkinsEKSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'eks:DescribeCluster'
+                  - 'eks:ListClusters'
+                  - 'eks:AccessKubernetesApi'
+                Resource: 'arn:aws:eks:*:*:cluster/*'
+              - Effect: Allow
+                Action:
+                  - 'eks:GetToken'
+                Resource: '*'
 
+        # Add more policies here as needed for your Jenkins CI/CD pipelines
+        # For example, you might need permissions for:
+        # - CloudFormation (for infrastructure as code)
+        # - Lambda (for serverless deployments)
+        # - RDS (for database interactions)
+        # - CloudWatch (for logging and monitoring)
+
+  # Lambda Role for creating SSM activation
   LambdaExecutionRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -76,6 +142,7 @@ Resources:
                   - 'logs:PutLogEvents'
                 Resource: 'arn:aws:logs:*:*:*'
 
+  # Lambda function to create SSM activation
   SSMActivationLambda:
     Type: 'AWS::Lambda::Function'
     Properties:
@@ -117,6 +184,7 @@ Resources:
         Variables:
           SSM_SERVICE_ROLE: !GetAtt SSMServiceRole.Arn
 
+  # Custom resource to trigger Lambda function
   SSMActivation:
     Type: 'Custom::SSMActivation'
     Properties:
