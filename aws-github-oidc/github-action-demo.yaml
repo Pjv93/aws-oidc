@@ -1,0 +1,74 @@
+# AWS-OIDC-Authentication-Demo
+# This workflow demonstrates how to use OpenID Connect (OIDC) to authenticate 
+# with AWS from GitHub Actions. This Demo performs two simple AWS operations:
+# 1. Fetches the caller identity
+# 2. Lists S3 buckets
+# This can be used as a template for more complex workflows requiring AWS authentication.
+
+
+# Name of the GitHub Actions workflow
+name: AWS-OIDC-Authentication-Demo
+
+# Define when this workflow will run
+on:
+  # Run on pushes to the main branch
+  push:
+    branches: [ "main" ]
+  # Run on pull requests targeting the main branch
+  pull_request:
+    branches: [ "main" ]
+  # Allow manual triggering of this workflow
+  workflow_dispatch:
+
+# Define the permissions needed for this workflow
+permissions:
+  # Do NOT MODIFY ID-TOKEN OR CONTENTS
+  # Permission to request the OIDC token 
+  id-token: write
+  # Permission to read the contents of the repository
+  contents: read
+
+# Define the jobs that this workflow will run
+jobs:
+  # Job to get the AWS caller identity and list S3 buckets
+  get_caller_identity:
+    name: Get Caller Identity
+    # Specify the type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Define the steps that this job will execute
+    steps:
+    # Step 1: Configure AWS Credentials
+    - name: "Configure AWS Credentials"
+      # Use the AWS credentials action from the marketplace
+      uses: aws-actions/configure-aws-credentials@v4.0.2
+      with:
+        # Specify the IAM role to assume (stored in GitHub Secrets)
+        role-to-assume: ${{ secrets.AWS_ACCOUNT_ROLE }}
+        # Specify the AWS region (stored in GitHub Secrets)
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # Step 2: Fetch the AWS caller identity
+    - name: Fetch the caller identity
+      # Run the AWS CLI command to get the caller identity
+      run: |
+        aws sts get-caller-identity
+
+    # Step 3: List S3 Buckets
+    - name: List S3 Buckets
+      # Run the AWS CLI command to list S3 buckets
+      run: |
+        aws s3 ls
+
+# Note: This workflow assumes that you have set up the following secrets in your GitHub repository:
+# - AWS_ACCOUNT_ROLE: The ARN of the IAM role to assume in AWS
+# - AWS_REGION: The AWS region where your resources are located
+#
+# To set up these secrets:
+# 1. Go to your GitHub repository
+# 2. Click on "Settings" -> "Secrets and variables" -> "Actions"
+# 3. Click "New repository secret"
+# 4. Add the secrets with the names AWS_ACCOUNT_ROLE and AWS_REGION, and their respective values
+#
+# The IAM role specified in AWS_ACCOUNT_ROLE should have the necessary permissions
+# to perform the actions in this workflow (get caller identity and list S3 buckets)
