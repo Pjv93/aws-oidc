@@ -65,3 +65,70 @@ The stack outputs the following values:
 - **Permissions Management**: Ensure the `JenkinsAccessRole` permissions are aligned with the specific needs of your pipelines, following the principle of least privilege.
 - **Automated Key Rotation**: The setup enables auto-rotation of private keys, further securing Jenkins server access to AWS.
 
+
+## FAQ
+
+### How does this setup differ from the Jenkins Pipeline AWS Plugin?
+
+This setup differs in security, credential management, and intended use cases. While the Jenkins Pipeline AWS Plugin is often convenient for AWS-hosted Jenkins instances, this repository’s SSM Hybrid Activation method is better suited for securely managing on-premises Jenkins servers that require AWS access.
+
+---
+
+### Which option is more secure for an on-premises Jenkins server?
+
+**This repository’s SSM Hybrid Activation setup is generally more secure for on-premises Jenkins servers** because it avoids static credentials entirely. By leveraging AWS Systems Manager (SSM) for hybrid activation, credentials are dynamically issued by AWS through role assumption, reducing the risk of exposure and eliminating the need for manual key rotation.
+
+---
+
+### Do both options support temporary credential rotation?
+
+Yes, both options can use temporary credentials, but they differ in how they’re managed:
+
+- **SSM Hybrid Activation (this repository)**: Credentials are automatically rotated by AWS without user intervention. This approach avoids static access keys and issues fresh credentials every session, with AWS handling all expiration and renewal through Systems Manager.
+  
+- **Jenkins Pipeline AWS Plugin**: While it can assume roles to obtain temporary credentials, it commonly relies on static credentials (access keys) for on-premises Jenkins servers. Without additional setup, these credentials need manual rotation.
+
+---
+
+### Which option is easier to set up?
+
+- **Jenkins Pipeline AWS Plugin** is generally easier to set up, especially for Jenkins instances within AWS, as it only requires installing the plugin and providing access credentials (either static keys or role-based).
+  
+- **SSM Hybrid Activation (this repository)** requires a more comprehensive setup, including a CloudFormation stack deployment and the installation of SSM Agent on the Jenkins server. However, this initial setup offers a more secure, managed environment with automated credential handling.
+
+---
+
+### Can this repository's setup be used with Jenkins Pipeline scripts?
+
+Yes, the Jenkins server set up with SSM Hybrid Activation can interact with AWS services directly in pipeline scripts, just as it would with the Jenkins Pipeline AWS Plugin. Once the Jenkins server is registered and has the necessary IAM role (`JenkinsAccessRole`), it can securely access AWS resources and use AWS CLI commands in scripts without hardcoded credentials.
+
+---
+
+### Does either option support automatic key rotation for the SSM Agent?
+
+- **SSM Hybrid Activation (this repository)**: Includes configuration for automatic key rotation within the SSM Agent by setting `KeyAutoRotateDays`. This provides daily key rotation, which adds security to the agent’s encrypted communications.
+
+- **Jenkins Pipeline AWS Plugin**: Does not manage key rotation for the SSM Agent. Users would need to set up any encryption or key management practices separately if required.
+
+---
+
+### Which option is best for a Jenkins instance hosted within AWS?
+
+For Jenkins servers within AWS, the **Jenkins Pipeline AWS Plugin** may be more convenient, as it allows seamless integration with IAM roles and requires minimal setup. The plugin can assume roles within AWS environments without needing hybrid activation, and it supports AWS CLI commands directly in pipeline scripts.
+
+---
+
+### When should I use this repository over the Jenkins Pipeline AWS Plugin?
+
+Use **this repository’s SSM Hybrid Activation setup** if:
+
+- Your Jenkins server is hosted on-premises or outside AWS, and you need secure AWS access without static credentials.
+- You want AWS to handle all credential rotation, expiration, and renewal automatically.
+- You require a setup with no hardcoded credentials, leveraging IAM roles and SSM’s secure connection.
+
+The **Jenkins Pipeline AWS Plugin** is a good choice if:
+
+- Your Jenkins server is hosted within AWS.
+- You need a quick and easy way to execute AWS CLI commands within Jenkins Pipeline scripts.
+- You have secure access management already in place, especially if using static credentials in on-premises setups.
+
