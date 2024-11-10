@@ -137,8 +137,10 @@ sudo systemctl stop amazon-ssm-agent || true
 # Register SSM Agent
 sudo amazon-ssm-agent -register -code "$activation_code" -id "$activation_id" -region "$region"
 
-# Update KeyAutoRotateDays in SSM Agent config
+# Update KeyAutoRotateDays in SSM Agent config to control rotation frequency
+# Set KeyAutoRotateDays to the desired number of days (e.g., 1 for daily rotation)
 sudo sed -i 's/"KeyAutoRotateDays": 0/"KeyAutoRotateDays": 1/' /etc/amazon/ssm/amazon-ssm-agent.json.template
+
 
 # Copy the template to a new config file
 sudo cp /etc/amazon/ssm/amazon-ssm-agent.json.template /etc/amazon/ssm/amazon-ssm-agent.json
