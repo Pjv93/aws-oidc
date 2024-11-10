@@ -1,4 +1,6 @@
-AWSTemplateFormatVersion: 2010-09-09
+# AWS CloudFormation Template for GitHub Actions OIDC Authentication
+
+AWSTemplateFormatVersion: '2010-09-09'
 Description: GitHub OIDC for when GitHub wants to communicate with AWS.
 
 Resources:
@@ -12,7 +14,6 @@ Resources:
       ThumbprintList:
         - d89e3bd43d5d909b47a18977aa9d5ce36cee184c  # Correct GitHub thumbprint
       Url: https://token.actions.githubusercontent.com
-
 
   # IAM Role for GitHub Actions
   GitHubActionsRole:
@@ -35,15 +36,22 @@ Resources:
               # Ensure the audience claim matches AWS STS
               StringEquals:
                 "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-              # Specify which GitHub repository is allowed to assume this role
+              # Specify which GitHub repository or organization is allowed to assume this role
               StringLike:
-                # Replace 'Pjv93/sample-app' with your actual GitHub repository name
-                # The '*' allows any branch or pull request from this repo
+                # Replace 'Pjv93/sample-app' with your actual GitHub repository or organization name.
+                #
+                # Examples:
+                # - For a specific repository:
+                #     "token.actions.githubusercontent.com:sub": "repo:org-name/repo-name:*"
+                #
+                # - For all repositories within an organization:
+                #     "token.actions.githubusercontent.com:sub": "repo:org-name/*"
+                #
+                # The '*' allows any branch or pull request from the specified repository or organization.
                 "token.actions.githubusercontent.com:sub": "repo:Pjv93/sample-app:*"
       # Attach the managed policy to this role
       ManagedPolicyArns:
         - !Ref GitHubActionsManagedPolicy
-
 
   # IAM Managed Policy for the GitHub Actions Role
   GitHubActionsManagedPolicy:
