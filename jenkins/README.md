@@ -61,5 +61,7 @@ The stack outputs the following values:
 ### Important Notes
 
 - **Credential-Free Access**: This solution eliminates the need for hardcoded AWS credentials, enhancing security by using AWS Systems Manager for role assumption.
+- **Automatic Credential Rotation**: Unlike traditional access keys that need manual rotation every 90 days, this setup allows for customizable key rotation intervals. By configuring the **KeyAutoRotateDays** setting, you can set how frequently credentials are rotated (e.g., every 1 day or every 7 days) based on your security requirements.
 - **Permissions Management**: Ensure the `JenkinsAccessRole` permissions are aligned with the specific needs of your pipelines, following the principle of least privilege.
 - **Automated Key Rotation**: The setup enables auto-rotation of private keys, further securing Jenkins server access to AWS.
+
