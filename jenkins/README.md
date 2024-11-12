@@ -4,7 +4,7 @@ This repository provides a secure integration solution for on-premises Jenkins s
 
 ## Architecture Diagram
 
-![Jenkins AWS SSM Hybrid Activation Diagram](/static/jenkins-architecture.png)
+![Jenkins AWS SSM Hybrid Activation Diagram](static/jenkins-architecture.png)
 
 ## Overview
 
