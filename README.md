@@ -2,6 +2,10 @@
 
 This repository contains two setups to securely authenticate CI/CD workflows with AWS services, one for **GitHub Actions** and one for **Jenkins**. Both setups eliminate the need for static credentials, enhancing security and simplifying AWS access management for CI/CD workflows.
 
+## Architecture Diagram
+
+[!Architecture Diagram](/static/architecture-diagram-oidc.png)
+
 ## Overview
 
 1. **GitHub Actions with AWS OIDC Authentication**:  
