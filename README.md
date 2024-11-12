@@ -4,7 +4,7 @@ This repository contains two setups to securely authenticate CI/CD workflows wit
 
 ## Architecture Diagram
 
-[!Architecture Diagram](/static/architecture-diagram-oidc.png)
+![Architecture Diagram](/static/architecture-diagram-oidc.png)
 
 ## Overview
 
