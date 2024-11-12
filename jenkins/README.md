@@ -1,6 +1,10 @@
-# Jenkins AWS SSM Hybrid Activation with EKS and ECR Access
+# Jenkins AWS SSM Hybrid Activation with AWS Resources
 
 This repository provides a secure integration solution for on-premises Jenkins servers to access AWS resources without hardcoded credentials. Using AWS Systems Manager (SSM) hybrid activations, Jenkins can assume an AWS IAM role to interact with services like S3, ECR, and EKS, enabling a secure and automated CI/CD environment.
+
+## Architecture Diagram
+
+![Jenkins AWS SSM Hybrid Activation Diagram](/static/jenkins-architecture.png)
 
 ## Overview
 
