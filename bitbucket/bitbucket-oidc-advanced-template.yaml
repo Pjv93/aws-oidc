@@ -1,0 +1,173 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Bitbucket OIDC configuration for communication between Bitbucket and AWS with support for multiple workspaces and repositories.
+
+Parameters:
+  WorkspaceNames:
+    Type: CommaDelimitedList
+    Default: "pjv93,another-org"
+    Description: >
+      A comma-separated list of Bitbucket workspaces (organizations).
+      - Examples:
+        - Single workspace: 'pjv93'
+        - Multiple workspaces: 'pjv93,another-org'.
+
+  RepositoriesPerWorkspace:
+    Type: String
+    Default: "repo1,repo2|*"
+    Description: >
+      Pipe-separated repository lists corresponding to each workspace in the 'WorkspaceNames' parameter.
+      - Format: 'repo1,repo2|*' (repositories for each workspace separated by commas, workspaces separated by '|').
+      - Use '*' to allow access to all repositories in a workspace.
+      - Examples:
+        - Single workspace: 'repo1,repo2'.
+        - Multiple workspaces: 'repo1,repo2|*'.
+
+  Audience:
+    Type: String
+    Default: ari:cloud:bitbucket::workspace/68ba39f8-62ba-4c01-9b43-f59728ecf218
+    Description: "The audience (aud) retrieved from Bitbucket repository settings."
+
+  BucketName:
+    Type: String
+    Default: "iampjv.co"
+    Description: >
+      The name of the S3 bucket to grant access to Bitbucket pipelines.
+      - IMPORTANT: Ensure the bucket name matches your existing S3 bucket in AWS.
+
+  IAMRoleName:
+    Type: String
+    Default: Bitbucket_OIDC_Role
+    Description: "IAM role name for Bitbucket OIDC (default: Bitbucket_OIDC_Role)."
+
+Resources:
+  # Lambda function to process workspaces and repositories into IAM-compatible patterns
+  RepoListProcessor:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import cfnresponse
+
+          def handler(event, context):
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      workspaces = event['ResourceProperties']['WorkspaceNames'].split(',')
+                      repositories_per_workspace = event['ResourceProperties']['RepositoriesPerWorkspace'].split('|')
+
+                      # Validate lengths
+                      if len(workspaces) != len(repositories_per_workspace):
+                          raise ValueError("Mismatch between number of workspaces and repositories-per-workspace.")
+
+                      repo_patterns = []
+                      for workspace, repos in zip(workspaces, repositories_per_workspace):
+                          if repos == '*':
+                              repo_patterns.append(f"{workspace}:*")
+                          else:
+                              for repo in repos.split(','):
+                                  repo_patterns.append(f"{workspace}:{repo}")
+
+                      # Send formatted patterns back to CloudFormation
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {'RepoPatterns': ','.join(repo_patterns)})
+                  else:
+                      # Handle Delete or no-op
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(f"Error: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+      Runtime: python3.9
+      Timeout: 30
+
+  # IAM Role for Lambda execution
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # Custom resource to process workspaces and repositories
+  RepoListCustomResource:
+    Type: Custom::RepoList
+    Properties:
+      ServiceToken: !GetAtt RepoListProcessor.Arn
+      WorkspaceNames: !Join [ ",", !Ref WorkspaceNames ]
+      RepositoriesPerWorkspace: !Ref RepositoriesPerWorkspace
+
+  # OIDC Provider
+  BitbucketOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      ClientIdList:
+        - !Ref Audience
+      ThumbprintList:
+        - a031c46782e6e6c661cd4bd10397f7fdc7df0afe
+      Url: !Sub "https://api.bitbucket.org/2.0/workspaces/${WorkspaceNames}"
+
+  # IAM Role for Bitbucket
+  BitbucketOidcRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref IAMRoleName
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Federated": "${IamOidcProviderArn}"
+                },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${OidcProviderEndpoint}:aud": "${Audience}"
+                  },
+                  "StringLike": {
+                    "${OidcProviderEndpoint}:sub": [${RepoPatterns}]
+                  }
+                }
+              }
+            ]
+          }
+        - {
+            "IamOidcProviderArn": !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/api.bitbucket.org/2.0/workspaces/${WorkspaceNames}",
+            "OidcProviderEndpoint": !Sub "api.bitbucket.org/2.0/workspaces/${WorkspaceNames}",
+            "Audience": !Ref Audience,
+            "RepoPatterns": !GetAtt RepoListCustomResource.RepoPatterns
+          }
+      Policies:
+        - PolicyName: BitbucketOIDCPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: S3Access
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${BucketName}/*"
+              - Sid: CloudWatchLogsAccess
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: "The ARN of the IAM Role for Bitbucket OIDC."
+    Value: !GetAtt BitbucketOidcRole.Arn
+    Export:
+      Name: BitbucketOidcRoleArn
