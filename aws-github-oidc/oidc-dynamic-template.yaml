@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation Template for GitHub Actions OIDC Authentication with multiple owners and repositories.
+
+# PARAMETERS SECTION: User-configurable inputs for the template
+Parameters:
+  # List of GitHub organizations or users
+  Owners:
+    Type: CommaDelimitedList
+    Default: "pvass24,another-org"
+    Description: >
+      A comma-separated list of GitHub organizations or users. 
+      - If you have just one organization or user, you can specify it as a single value (e.g., 'pvass24').
+      - For example:
+        - Single owner: 'pvass24'
+        - Multiple owners: 'pvass24,another-org'.
+      - IMPORTANT: Ensure this matches your actual GitHub organization or username.
+  
+  # List of repositories corresponding to each owner
+  RepositoriesPerOwner:
+    Type: String
+    Default: "Resume,k8s-kadence|repo1,repo2"
+    Description: >
+      Pipe-separated repository lists corresponding to each owner in the 'Owners' parameter.
+      - Format: 'repo1,repo2|repo3,repo4' (repositories for each owner separated by commas, owners separated by pipes '|').
+      - For example:
+        - If you only have one owner ('pvass24') and two repositories ('Resume' and 'k8s-kadence'):
+          'Resume,k8s-kadence'.
+        - If you have two owners ('pvass24' and 'another-org') and specific repositories for each:
+          'Resume,k8s-kadence|repo1,repo2'.
+      - To allow access to all repositories for a specific owner, use an asterisk (*) instead of listing repositories:
+        - Example for all repositories for 'pvass24': '*'.
+        - Example for mixed access: '*,repo1|repo2'.
+      - IMPORTANT: Make sure the repositories exist under the specified owners and are correctly formatted.
+
+  # The name of the S3 bucket for which access is granted to GitHub Actions
+  S3BucketName:
+    Type: String
+    Default: "iampjv.co"
+    Description: The name of the S3 bucket to allow access for GitHub Actions.
+
+# RESOURCES SECTION: AWS resources created by the template
+Resources:
+  # Lambda function to process the list of owners and repositories
+  RepoListProcessor:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          # Python script to process and format the list of repositories
+          import cfnresponse
+          
+          def handler(event, context):
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      # Split the input parameters into individual owners and repositories
+                      owners = event['ResourceProperties']['Owners'].split(',')
+                      repos_per_owner = event['ResourceProperties']['RepositoriesPerOwner'].split('|')
+                      
+                      # Validate that the number of owners matches the number of repository groups
+                      if len(owners) != len(repos_per_owner):
+                          raise ValueError("Mismatch between number of owners and repositories-per-owner lists.")
+                      
+                      # Generate the formatted list of repo access strings
+                      repo_list = []
+                      for owner, repos in zip(owners, repos_per_owner):
+                          if repos == '*':
+                              # Add wildcard access for all repositories for the owner
+                              repo_list.append(f"repo:{owner}/*")
+                          else:
+                              # Add access for specific repositories
+                              for repo in repos.split(','):
+                                  repo_list.append(f"repo:{owner}/{repo}:*")
+                      
+                      # Send the formatted list back to CloudFormation
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {'RepoList': ','.join(repo_list)})
+                  else:
+                      # Handle deletion or no-op
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(f"Error: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+      Runtime: python3.9
+      Timeout: 30
+
+  # IAM Role for the Lambda function
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # Custom resource to dynamically generate the list of repositories
+  RepoListCustomResource:
+    Type: Custom::RepoList
+    Properties:
+      ServiceToken: !GetAtt RepoListProcessor.Arn
+      Owners: !Join [ ",", !Ref Owners ]  # Join the owners list into a single string
+      RepositoriesPerOwner: !Ref RepositoriesPerOwner  # Pass repository-per-owner list
+
+  # GitHub OIDC Provider to establish trust with AWS
+  GitHubActionsOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      ClientIdList:
+        - sts.amazonaws.com  # AWS STS service is the client
+      ThumbprintList:
+        - d89e3bd43d5d909b47a18977aa9d5ce36cee184c  # GitHub OIDC thumbprint
+      Url: https://token.actions.githubusercontent.com  # GitHub OIDC URL
+
+  # IAM Role for GitHub Actions
+  GitHubActionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "GitHub_Actions_Role_${AWS::StackName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              # Ensure the audience claim matches AWS STS
+              StringEquals:
+                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+              # Dynamically generate the list of repositories from the custom resource
+              StringLike:
+                "token.actions.githubusercontent.com:sub": !Split [ ",", !GetAtt RepoListCustomResource.RepoList ]
+
+  # IAM Policy to grant permissions to the S3 bucket
+  GitHubActionsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${AWS::StackName}-s3-policy"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Bucket-level permissions
+          - Sid: AllowS3BucketActions
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource:
+              - !Sub "arn:aws:s3:::${S3BucketName}"  # Replace with the specified S3 bucket name
+          
+          # Object-level permissions
+          - Sid: AllowS3ObjectActions
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+            Resource:
+              - !Sub "arn:aws:s3:::${S3BucketName}/*"
+              
+      Roles: 
+        - !Ref GitHubActionsRole  # Attach this policy to the GitHubActionsRole
+
+# OUTPUTS SECTION: Useful information from the stack
+Outputs:
+  # ARN of the IAM Role for GitHub Actions
+  GitHubActionsRoleArn:
+    Description: The ARN of the IAM Role for GitHub Actions
+    Value: !GetAtt GitHubActionsRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-GitHubActionsRoleArn"
