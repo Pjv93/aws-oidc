@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Flexible CloudFormation template for GitLab-specific OIDC authentication with AWS.
+Parameters:
+  GitLabNamespace:
+    Type: String
+    Description: "GitLab namespace or group (e.g., pjv93)."
+    Default: "pjv93"
+  GitLabProject:
+    Type: String
+    Description: "GitLab project name (e.g., sample-app)."
+    Default: "sample-app"
+  GitLabBranch:
+    Type: String
+    Default: "main"
+    Description: "The GitLab branch to allow access (e.g., 'main', 'develop'). Use '*' for all branches."
+Resources:
+  GitLabOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: "https://gitlab.com"
+      ClientIdList:
+        - "sts.amazonaws.com"
+      ThumbprintList:
+        - "9e99a48a9960b14926bb7f3b6bfa10796a8aef5e"
+  GitLabOIDCRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "GitLab_OIDC_Role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/gitlab.com"
+            Action: "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              StringEquals:
+                "gitlab.com:aud": "sts.amazonaws.com"  # Changed this to match the pipeline
+              StringLike:
+                "gitlab.com:sub": !Sub "project_path:${GitLabNamespace}/${GitLabProject}:ref_type:branch:ref:${GitLabBranch}"
+      Policies:
+        - PolicyName: "GitLabCICDPolicy"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - "arn:aws:s3:::iampjv.co"
+                  - "arn:aws:s3:::iampjv.co/*"
+Outputs:
+  OIDCProviderArn:
+    Value: !GetAtt GitLabOIDCProvider.Arn
+    Description: The ARN of the GitLab OIDC Provider.
+  RoleArn:
+    Value: !GetAtt GitLabOIDCRole.Arn
+    Description: The ARN of the GitLab OIDC Role.
