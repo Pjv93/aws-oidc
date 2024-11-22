@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation Template for GitLab OIDC Authentication with multiple namespaces and repositories.
+
+Parameters:
+  GitLabNamespaces:
+    Type: CommaDelimitedList
+    Default: "pjv93,another-group"
+    Description: >
+      A comma-separated list of GitLab namespaces (groups or users).
+      - Examples:
+        - Single namespace: 'pjv93'
+        - Multiple namespaces: 'pjv93,another-group'.
+
+  RepositoriesPerNamespace:
+    Type: String
+    Default: "repo1,repo2|*"
+    Description: >
+      Pipe-separated repository lists for each namespace.
+      - Format: 'repo1,repo2|repo3,repo4'.
+      - Use '*' to allow access to all repositories within a namespace.
+
+  S3BucketName:
+    Type: String
+    Default: "iampjv.co"
+    Description: The name of the S3 bucket to allow access for GitLab CI/CD.
+
+Resources:
+  # Lambda function to dynamically process GitLab namespaces and repositories
+  RepoListProcessor:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import cfnresponse
+          
+          def handler(event, context):
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      # Parse input parameters
+                      namespaces = event['ResourceProperties']['GitLabNamespaces'].split(',')
+                      repos_per_namespace = event['ResourceProperties']['RepositoriesPerNamespace'].split('|')
+
+                      # Validate length of parameters
+                      if len(namespaces) != len(repos_per_namespace):
+                          raise ValueError("Mismatch between namespaces and repositories-per-namespace lists.")
+
+                      # Build the list of repository patterns
+                      repo_patterns = []
+                      for namespace, repos in zip(namespaces, repos_per_namespace):
+                          if repos == '*':
+                              repo_patterns.append(f"project_path:{namespace}/*")
+                          else:
+                              for repo in repos.split(','):
+                                  repo_patterns.append(f"project_path:{namespace}/{repo}")
+
+                      # Respond back with the generated patterns
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {'RepoPatterns': ','.join(repo_patterns)})
+                  else:
+                      # Handle Delete or no-op
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(f"Error: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+      Runtime: python3.9
+      Timeout: 30
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  RepoListCustomResource:
+    Type: Custom::RepoList
+    Properties:
+      ServiceToken: !GetAtt RepoListProcessor.Arn
+      GitLabNamespaces: !Join [ ",", !Ref GitLabNamespaces ]
+      RepositoriesPerNamespace: !Ref RepositoriesPerNamespace
+
+  GitLabOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: "https://gitlab.com"
+      ClientIdList:
+        - "sts.amazonaws.com"
+      ThumbprintList:
+        - "9e99a48a9960b14926bb7f3b6bfa10796a8aef5e"  # GitLab Thumbprint
+
+  GitLabActionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "GitLab_Actions_Role_${AWS::StackName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/gitlab.com"
+            Action: "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              StringEquals:
+                "gitlab.com:aud": "sts.amazonaws.com"
+              StringLike:
+                "gitlab.com:sub": !Split [ ",", !GetAtt RepoListCustomResource.RepoPatterns ]
+
+  GitLabActionsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${AWS::StackName}-GitLabActionsPolicy"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # S3 bucket permissions
+          - Sid: AllowS3BucketActions
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource:
+              - !Sub "arn:aws:s3:::${S3BucketName}"
+          - Sid: AllowS3ObjectActions
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+            Resource:
+              - !Sub "arn:aws:s3:::${S3BucketName}/*"
+      Roles:
+        - !Ref GitLabActionsRole
+
+Outputs:
+  GitLabActionsRoleArn:
+    Value: !GetAtt GitLabActionsRole.Arn
+    Description: The ARN of the IAM Role for GitLab CI/CD
+  GitLabOidcProviderArn:
+    Value: !GetAtt GitLabOidcProvider.Arn
+    Description: The ARN of the GitLab OIDC Provider
