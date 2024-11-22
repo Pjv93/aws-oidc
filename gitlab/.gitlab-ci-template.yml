@@ -1,0 +1,30 @@
+stages:
+  - setup
+  - assume-role
+
+setup:
+  stage: setup
+  image: alpine:latest
+  script:
+    - echo "Setting up environment..."
+
+assume-role:
+  stage: assume-role
+  image:
+    name: amazon/aws-cli:latest
+    entrypoint: [""]
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: sts.amazonaws.com  # Ensure consistency with your audience
+  variables:
+    ROLE_ARN: "${ROLE_ARN}"
+  script:
+    - |
+      export $(aws sts assume-role-with-web-identity \
+        --role-arn "${ROLE_ARN}" \
+        --role-session-name "GitLabRunner-${CI_PROJECT_ID}-${CI_PIPELINE_ID}" \
+        --web-identity-token "${GITLAB_OIDC_TOKEN}" \
+        --duration-seconds 3600 \
+        --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+        --output text | xargs -n 3 printf "AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s")
+    - aws sts get-caller-identity
