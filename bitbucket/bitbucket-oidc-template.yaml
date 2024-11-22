@@ -1,6 +1,24 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Bitbucket OIDC configuration for communication between Bitbucket and AWS.
 
+Parameters:
+  WorkspaceName:
+    Type: String
+    Description: Bitbucket workspace name (e.g., pjv93)
+  
+  RepositoryName:
+    Type: String
+    Description: Bitbucket repository name (e.g., sample-app)
+  
+  BucketName:
+    Type: String
+    Description: S3 bucket name (e.g., iampjv.co)
+  
+  IAMRoleName:
+    Type: String
+    Default: Bitbucket_Actions_Role
+    Description: IAM role name for Bitbucket OIDC
+
 Resources:
   # OIDC Provider definition
   BitbucketActionsOidcProvider:
@@ -10,28 +28,26 @@ Resources:
         - sts.amazonaws.com
       ThumbprintList:
         - a031c46782e6e6c661cd4bd10397f7fdc7df0afe  # Bitbucket's OIDC thumbprint
-      Url: https://api.bitbucket.org/2.0/workspaces
+      Url: !Sub "https://api.bitbucket.org/2.0/workspaces/${WorkspaceName}/pipelines-config/identity/oidc"
 
   # IAM Role for Bitbucket Actions
   BitbucketActionsRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: Bitbucket_Actions_Role
+      RoleName: !Ref IAMRoleName
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/api.bitbucket.org/2.0/workspaces"
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/api.bitbucket.org/2.0/workspaces/${WorkspaceName}/pipelines-config/identity/oidc"
             Action: "sts:AssumeRoleWithWebIdentity"
             Condition:
               StringEquals:
-                "api.bitbucket.org/2.0/workspaces:aud": "sts.amazonaws.com"
+                !Sub "api.bitbucket.org/2.0/workspaces/${WorkspaceName}/pipelines-config/identity/oidc:aud": "sts.amazonaws.com"
               StringLike:
-                # Updated for your repository
-                "api.bitbucket.org/2.0/workspaces:sub": "repository:pjv93/sample-app:*"
+                !Sub "api.bitbucket.org/2.0/workspaces/${WorkspaceName}/pipelines-config/identity/oidc:sub": "repository:${WorkspaceName}/${RepositoryName}:*"
       
-      # Attach the managed policy to this role
       ManagedPolicyArns:
         - !Ref BitbucketActionsManagedPolicy
 
@@ -39,11 +55,11 @@ Resources:
   BitbucketActionsManagedPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      ManagedPolicyName: Bitbucket_Actions_Policy
+      ManagedPolicyName: !Sub "${IAMRoleName}_Policy"
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          # Example: Permissions for S3 bucket-level operations
+          # S3 bucket-level permissions
           - Sid: AllowS3Actions
             Effect: Allow
             Action:
@@ -51,10 +67,9 @@ Resources:
               - s3:GetBucketLocation
               - s3:ListBucketMultipartUploads
             Resource:
-              # Replace with your actual S3 bucket ARN
-              - arn:aws:s3:::iampjv.co
+              - !Sub "arn:aws:s3:::${BucketName}"
           
-          # Example: Permissions for S3 object-level operations
+          # S3 object-level permissions
           - Sid: AllowS3ObjectActions
             Effect: Allow
             Action:
@@ -64,8 +79,4 @@ Resources:
               - s3:ListMultipartUploadParts
               - s3:AbortMultipartUpload
             Resource:
-              # Updated for your bucket, including object-level permissions
-              - arn:aws:s3:::iampjv.co/*
-
-          # Add more permission blocks here for other AWS services as needed
-          # Follow the principle of least privilege
+              - !Sub "arn:aws:s3:::${BucketName}/*"
