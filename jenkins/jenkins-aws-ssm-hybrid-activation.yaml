@@ -40,6 +40,15 @@ Resources:
             Action: 'sts:AssumeRole'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        # Policy to allow assuming the Jenkins Access Role
+        - PolicyName: AssumeJenkinsRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'sts:AssumeRole'
+                Resource: !GetAtt JenkinsRole.Arn
 
   # Jenkins Role with permissions for AWS services
   JenkinsRole:
