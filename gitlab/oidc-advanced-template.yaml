@@ -1,6 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: AWS CloudFormation Template for GitLab OIDC Authentication with multiple namespaces and repositories.
+Description: AWS CloudFormation Template for GitLab OIDC Authentication with support for multiple namespaces and repositories.
 
+# PARAMETERS SECTION: User-configurable inputs for the template
 Parameters:
   GitLabNamespaces:
     Type: CommaDelimitedList
@@ -10,22 +11,29 @@ Parameters:
       - Examples:
         - Single namespace: 'pjv93'
         - Multiple namespaces: 'pjv93,another-group'.
+      - IMPORTANT: Ensure the namespaces match your GitLab project paths.
 
   RepositoriesPerNamespace:
     Type: String
     Default: "repo1,repo2|*"
     Description: >
-      Pipe-separated repository lists for each namespace.
-      - Format: 'repo1,repo2|repo3,repo4'.
-      - Use '*' to allow access to all repositories within a namespace.
+      Pipe-separated repository lists corresponding to each namespace in the 'GitLabNamespaces' parameter.
+      - Format: 'repo1,repo2|repo3,repo4' (repositories for each namespace separated by commas, namespaces separated by pipes '|').
+      - To allow access to all repositories for a namespace, use '*':
+        - Example for all repositories in 'pjv93': '*'.
+        - Example for mixed access: 'repo1,repo2|*'.
+      - IMPORTANT: Make sure the repositories exist within the specified namespaces.
 
   S3BucketName:
     Type: String
     Default: "iampjv.co"
-    Description: The name of the S3 bucket to allow access for GitLab CI/CD.
+    Description: >
+      The name of the S3 bucket to grant access to GitLab CI/CD pipelines.
+      - IMPORTANT: Ensure the bucket name matches your existing S3 bucket in AWS.
 
+# RESOURCES SECTION: AWS resources created by the template
 Resources:
-  # Lambda function to dynamically process GitLab namespaces and repositories
+  # Lambda function to process namespaces and repositories into IAM-compatible patterns
   RepoListProcessor:
     Type: AWS::Lambda::Function
     Properties:
@@ -42,11 +50,11 @@ Resources:
                       namespaces = event['ResourceProperties']['GitLabNamespaces'].split(',')
                       repos_per_namespace = event['ResourceProperties']['RepositoriesPerNamespace'].split('|')
 
-                      # Validate length of parameters
+                      # Validate lengths
                       if len(namespaces) != len(repos_per_namespace):
-                          raise ValueError("Mismatch between namespaces and repositories-per-namespace lists.")
+                          raise ValueError("Mismatch between number of namespaces and repositories-per-namespace.")
 
-                      # Build the list of repository patterns
+                      # Build repository patterns
                       repo_patterns = []
                       for namespace, repos in zip(namespaces, repos_per_namespace):
                           if repos == '*':
@@ -55,7 +63,7 @@ Resources:
                               for repo in repos.split(','):
                                   repo_patterns.append(f"project_path:{namespace}/{repo}")
 
-                      # Respond back with the generated patterns
+                      # Send the formatted patterns back to CloudFormation
                       cfnresponse.send(event, context, cfnresponse.SUCCESS, {'RepoPatterns': ','.join(repo_patterns)})
                   else:
                       # Handle Delete or no-op
@@ -66,6 +74,7 @@ Resources:
       Runtime: python3.9
       Timeout: 30
 
+  # IAM Role for the Lambda function to enable execution
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -79,6 +88,7 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
+  # Custom resource to dynamically generate repository patterns
   RepoListCustomResource:
     Type: Custom::RepoList
     Properties:
@@ -86,15 +96,17 @@ Resources:
       GitLabNamespaces: !Join [ ",", !Ref GitLabNamespaces ]
       RepositoriesPerNamespace: !Ref RepositoriesPerNamespace
 
+  # GitLab OIDC Provider to establish trust with AWS
   GitLabOidcProvider:
     Type: AWS::IAM::OIDCProvider
     Properties:
       Url: "https://gitlab.com"
       ClientIdList:
-        - "sts.amazonaws.com"
+        - "sts.amazonaws.com"  # AWS STS service is the client
       ThumbprintList:
-        - "9e99a48a9960b14926bb7f3b6bfa10796a8aef5e"  # GitLab Thumbprint
+        - "9e99a48a9960b14926bb7f3b6bfa10796a8aef5e"  # GitLab OIDC thumbprint
 
+  # IAM Role for GitLab CI/CD pipelines
   GitLabActionsRole:
     Type: AWS::IAM::Role
     Properties:
@@ -107,11 +119,14 @@ Resources:
               Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/gitlab.com"
             Action: "sts:AssumeRoleWithWebIdentity"
             Condition:
+              # Match audience claim in OIDC token
               StringEquals:
                 "gitlab.com:aud": "sts.amazonaws.com"
+              # Restrict access to dynamically generated project paths
               StringLike:
                 "gitlab.com:sub": !Split [ ",", !GetAtt RepoListCustomResource.RepoPatterns ]
 
+  # IAM Policy to grant permissions to the S3 bucket
   GitLabActionsPolicy:
     Type: AWS::IAM::Policy
     Properties:
@@ -119,7 +134,7 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          # S3 bucket permissions
+          # Bucket-level permissions
           - Sid: AllowS3BucketActions
             Effect: Allow
             Action:
@@ -127,6 +142,7 @@ Resources:
               - s3:GetBucketLocation
             Resource:
               - !Sub "arn:aws:s3:::${S3BucketName}"
+          # Object-level permissions
           - Sid: AllowS3ObjectActions
             Effect: Allow
             Action:
@@ -136,12 +152,18 @@ Resources:
             Resource:
               - !Sub "arn:aws:s3:::${S3BucketName}/*"
       Roles:
-        - !Ref GitLabActionsRole
+        - !Ref GitLabActionsRole  # Attach policy to GitLabActionsRole
 
+# OUTPUTS SECTION: Useful information from the stack
 Outputs:
   GitLabActionsRoleArn:
-    Value: !GetAtt GitLabActionsRole.Arn
     Description: The ARN of the IAM Role for GitLab CI/CD
+    Value: !GetAtt GitLabActionsRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-GitLabActionsRoleArn"
+
   GitLabOidcProviderArn:
-    Value: !GetAtt GitLabOidcProvider.Arn
     Description: The ARN of the GitLab OIDC Provider
+    Value: !GetAtt GitLabOidcProvider.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-GitLabOidcProviderArn"
