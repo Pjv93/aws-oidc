@@ -1,0 +1,23 @@
+# bitbucket-pipelines.yml
+
+image: amazon/aws-cli:2.13.14
+
+pipelines:
+  default:
+    - step:
+        name: Deploy to AWS S3 using OIDC
+        oidc: true
+        script:
+          # Load secrets from repository
+          - export AWS_ROLE_ARN="$ROLE_ARN"  # Add ROLE_ARN as a secret in your repository
+          - export AWS_DEFAULT_REGION="$AWS_REGION"  # Add AWS_REGION as a secret in your repository
+          - export AWS_WEB_IDENTITY_TOKEN_FILE="/tmp/aws_web_identity_token"
+          
+          # Write the OIDC token to the file
+          - echo $BITBUCKET_STEP_OIDC_TOKEN > $AWS_WEB_IDENTITY_TOKEN_FILE
+          
+          # Confirm role assumption
+          - aws sts get-caller-identity
+          
+          # Replace 'your-local-file.txt' with the file you want to upload
+          - aws s3 cp your-local-file.txt s3://iampjv.co/
