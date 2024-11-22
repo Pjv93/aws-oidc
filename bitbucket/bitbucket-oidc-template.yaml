@@ -47,7 +47,6 @@ Resources:
                 !Sub "api.bitbucket.org/2.0/workspaces/${WorkspaceName}/pipelines-config/identity/oidc:aud": "sts.amazonaws.com"
               StringLike:
                 !Sub "api.bitbucket.org/2.0/workspaces/${WorkspaceName}/pipelines-config/identity/oidc:sub": "repository:${WorkspaceName}/${RepositoryName}:*"
-      
       ManagedPolicyArns:
         - !Ref BitbucketActionsManagedPolicy
 
