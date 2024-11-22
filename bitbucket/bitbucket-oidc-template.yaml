@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Bitbucket OIDC for when Bitbucket wants to communicate with AWS.
+Description: Bitbucket OIDC configuration for communication between Bitbucket and AWS.
 
 Resources:
   # OIDC Provider definition
@@ -28,13 +28,8 @@ Resources:
               StringEquals:
                 "api.bitbucket.org/2.0/workspaces:aud": "sts.amazonaws.com"
               StringLike:
-                # Replace 'your-workspace/your-repository' with your actual Bitbucket workspace and repository
-                # Examples:
-                # - For a specific repository:
-                #     "api.bitbucket.org/2.0/workspaces:sub": "repository:your-workspace/your-repository:*"
-                # - For all repositories in a workspace:
-                #     "api.bitbucket.org/2.0/workspaces:sub": "repository:your-workspace/*"
-                "api.bitbucket.org/2.0/workspaces:sub": "repository:your-workspace/your-repository:*"
+                # Updated for your repository
+                "api.bitbucket.org/2.0/workspaces:sub": "repository:pjv93/sample-app:*"
       
       # Attach the managed policy to this role
       ManagedPolicyArns:
@@ -57,7 +52,7 @@ Resources:
               - s3:ListBucketMultipartUploads
             Resource:
               # Replace with your actual S3 bucket ARN
-              - arn:aws:s3:::your-bucket-name
+              - arn:aws:s3:::iampjv.co
           
           # Example: Permissions for S3 object-level operations
           - Sid: AllowS3ObjectActions
@@ -69,8 +64,8 @@ Resources:
               - s3:ListMultipartUploadParts
               - s3:AbortMultipartUpload
             Resource:
-              # Replace with your actual S3 bucket ARN and include '/*' for object-level permissions
-              - arn:aws:s3:::your-bucket-name/*
+              # Updated for your bucket, including object-level permissions
+              - arn:aws:s3:::iampjv.co/*
 
-          # You can add more permission blocks here for other AWS services as needed
-          # Always follow the principle of least privilege
+          # Add more permission blocks here for other AWS services as needed
+          # Follow the principle of least privilege
