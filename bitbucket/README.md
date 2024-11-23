@@ -145,11 +145,11 @@ pipelines:
 ## Outputs
 
 After deploying the template, the following outputs are available:
-
+___________________________________________________________________________
 | Output Name      | Description                                          |
 |------------------|------------------------------------------------------|
 | `IAMRoleArn`     | The ARN of the IAM role for Bitbucket OIDC pipelines.|
-
+___________________________________________________________________________
 ---
 
 ## Support
