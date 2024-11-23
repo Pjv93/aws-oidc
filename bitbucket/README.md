@@ -54,7 +54,17 @@ When working with Bitbucket Pipelines, secure access to AWS services is essentia
    - Repositories configured with OpenID Connect.
    - UUIDs and Audience values retrieved from repository settings.
 
-3. **AWS CLI**:
+3. **Enable Pipelines in Bitbucket**:
+   - Navigate to **Repository settings > Pipelines > Settings**.
+   - Enable the **Pipelines** feature.
+
+4. **Add Repository Variables**:
+   - Navigate to **Repository settings > Pipelines > Repository variables**.
+   - Add the following variables:
+     1. `AWS_ROLE_ARN`: The ARN of the IAM role created by the CloudFormation template.
+     2. `AWS_REGION`: The AWS region where your resources are located.
+
+5. **AWS CLI**:
    - Installed and configured on your local machine for template deployment.
 
 ---
