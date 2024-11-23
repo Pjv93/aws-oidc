@@ -1,81 +1,145 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Bitbucket OIDC configuration for communication between Bitbucket and AWS with support for multiple workspaces and repositories.
+Description: >
+  AWS CloudFormation Template for Bitbucket OIDC Authentication, 
+  enabling secure communication between Bitbucket Pipelines and AWS.
+  Supports multiple repositories within a single Bitbucket workspace.
 
+# PARAMETERS SECTION: User-configurable inputs for the template
 Parameters:
-  WorkspaceNames:
-    Type: CommaDelimitedList
-    Default: "pjv93,another-org"
-    Description: >
-      A comma-separated list of Bitbucket workspaces (organizations).
-      - Examples:
-        - Single workspace: 'pjv93'
-        - Multiple workspaces: 'pjv93,another-org'.
-
-  RepositoriesPerWorkspace:
+  WorkspaceName:
     Type: String
-    Default: "repo1,repo2|*"
+    Default: "pjv93"
     Description: >
-      Pipe-separated repository lists corresponding to each workspace in the 'WorkspaceNames' parameter.
-      - Format: 'repo1,repo2|*' (repositories for each workspace separated by commas, workspaces separated by '|').
-      - Use '*' to allow access to all repositories in a workspace.
-      - Examples:
-        - Single workspace: 'repo1,repo2'.
-        - Multiple workspaces: 'repo1,repo2|*'.
+      The Bitbucket workspace (organization) name.
+      - Example: 'pjv93'.
+      - IMPORTANT: Ensure this matches your Bitbucket workspace.
+
+  RepositoryUUIDs:
+    Type: CommaDelimitedList
+    Default: "123e4567-e89b-12d3-a456-426614174000,223e4567-e89b-12d3-a456-426614174001"
+    Description: >
+      A comma-separated list of Bitbucket repository UUIDs for the specified workspace.
+      - Example: "123e4567-e89b-12d3-a456-426614174000,223e4567-e89b-12d3-a456-426614174001".
+      - To locate the UUIDs in Bitbucket:
+        1. Navigate to **Repository settings** for each repository.
+        2. Go to **OpenID Connect**.
+        3. Copy the **UUID** listed under OpenID Connect.
 
   Audience:
     Type: String
-    Default: ari:cloud:bitbucket::workspace/68ba39f8-62ba-4c01-9b43-f59728ecf218
-    Description: "The audience (aud) retrieved from Bitbucket repository settings."
+    Default: "ari:cloud:bitbucket::workspace/68ba39f8-62ba-4c01-9b43-f59728ecf218"
+    Description: >
+      The audience (aud) retrieved from Bitbucket's OpenID Connect settings.
+      - Example: "ari:cloud:bitbucket::workspace/WORKSPACE_UUID".
+      - To locate the Audience in Bitbucket:
+        1. Navigate to **Repository settings**.
+        2. Go to **OpenID Connect**.
+        3. Copy the **Audience** value shown in the settings.
 
   BucketName:
     Type: String
     Default: "iampjv.co"
     Description: >
       The name of the S3 bucket to grant access to Bitbucket pipelines.
-      - IMPORTANT: Ensure the bucket name matches your existing S3 bucket in AWS.
+      - IMPORTANT: Ensure this bucket exists in your AWS account.
 
   IAMRoleName:
     Type: String
-    Default: Bitbucket_OIDC_Role
-    Description: "IAM role name for Bitbucket OIDC (default: Bitbucket_OIDC_Role)."
+    Default: "Bitbucket_OIDC_Role"
+    Description: >
+      Name of the IAM Role created for Bitbucket OIDC integration.
+      - Default: "Bitbucket_OIDC_Role".
 
+# RESOURCES SECTION: AWS resources created by this template
 Resources:
-  # Lambda function to process workspaces and repositories into IAM-compatible patterns
-  RepoListProcessor:
+  # Lambda function to process repository UUIDs and dynamically generate trust policy
+  TrustPolicyProcessor:
     Type: AWS::Lambda::Function
     Properties:
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
         ZipFile: |
+          import boto3
           import cfnresponse
+          import json
+
+          def update_assume_role_policy(role_name, workspace_name, audience, repo_patterns):
+              """
+              Updates the AssumeRole policy for the IAM Role with Bitbucket repository trust conditions.
+              """
+              iam = boto3.client('iam')
+              provider_url = f"api.bitbucket.org/2.0/workspaces/{workspace_name}/pipelines-config/identity/oidc"
+              
+              # Construct the AssumeRole trust policy
+              trust_policy = {
+                  "Version": "2012-10-17",
+                  "Statement": [{
+                      "Effect": "Allow",
+                      "Principal": {
+                          "Federated": f"arn:aws:iam::{boto3.client('sts').get_caller_identity()['Account']}:oidc-provider/{provider_url}"
+                      },
+                      "Action": "sts:AssumeRoleWithWebIdentity",
+                      "Condition": {
+                          "StringEquals": {
+                              f"{provider_url}:aud": audience
+                          },
+                          "StringLike": {
+                              f"{provider_url}:sub": repo_patterns
+                          }
+                      }
+                  }]
+              }
+
+              # Update IAM Role with new trust policy
+              try:
+                  iam.update_assume_role_policy(
+                      RoleName=role_name,
+                      PolicyDocument=json.dumps(trust_policy)
+                  )
+                  return True
+              except Exception as e:
+                  print(f"Error updating trust policy: {str(e)}")
+                  return False
 
           def handler(event, context):
+              """
+              AWS Lambda function entry point.
+              """
               try:
                   if event['RequestType'] in ['Create', 'Update']:
-                      workspaces = event['ResourceProperties']['WorkspaceNames'].split(',')
-                      repositories_per_workspace = event['ResourceProperties']['RepositoriesPerWorkspace'].split('|')
-
-                      # Validate lengths
-                      if len(workspaces) != len(repositories_per_workspace):
-                          raise ValueError("Mismatch between number of workspaces and repositories-per-workspace.")
-
-                      repo_patterns = []
-                      for workspace, repos in zip(workspaces, repositories_per_workspace):
-                          if repos == '*':
-                              repo_patterns.append(f"{workspace}:*")
-                          else:
-                              for repo in repos.split(','):
-                                  repo_patterns.append(f"{workspace}:{repo}")
-
-                      # Send formatted patterns back to CloudFormation
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {'RepoPatterns': ','.join(repo_patterns)})
+                      # Parameters from CloudFormation template
+                      role_name = event['ResourceProperties']['RoleName']
+                      workspace_name = event['ResourceProperties']['WorkspaceName']
+                      audience = event['ResourceProperties']['Audience']
+                      repository_uuids = event['ResourceProperties']['RepositoryUUIDs'].split(',')
+                      
+                      # Format repository UUIDs for trust policy
+                      repo_patterns = [
+                          f"{{{uuid}}}:*" if not uuid.startswith("{") else f"{uuid}:*"
+                          for uuid in repository_uuids
+                      ]
+                      
+                      # Update IAM trust policy
+                      success = update_assume_role_policy(role_name, workspace_name, audience, repo_patterns)
+                      
+                      # Notify CloudFormation of the result
+                      if success:
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                              'Message': 'Trust policy updated successfully'
+                          })
+                      else:
+                          cfnresponse.send(event, context, cfnresponse.FAILED, {
+                              'Message': 'Failed to update trust policy'
+                          })
                   else:
-                      # Handle Delete or no-op
+                      # Handle Delete event or other no-op
                       cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
               except Exception as e:
                   print(f"Error: {e}")
-                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {
+                      'Error': str(e)
+                  })
       Runtime: python3.9
       Timeout: 30
 
@@ -92,16 +156,18 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AllowIAMUpdates
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:UpdateAssumeRolePolicy
+                  - sts:GetCallerIdentity
+                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${IAMRoleName}'
 
-  # Custom resource to process workspaces and repositories
-  RepoListCustomResource:
-    Type: Custom::RepoList
-    Properties:
-      ServiceToken: !GetAtt RepoListProcessor.Arn
-      WorkspaceNames: !Join [ ",", !Ref WorkspaceNames ]
-      RepositoriesPerWorkspace: !Ref RepositoriesPerWorkspace
-
-  # OIDC Provider
+  # IAM OIDC Provider for Bitbucket
   BitbucketOidcProvider:
     Type: AWS::IAM::OIDCProvider
     Properties:
@@ -109,65 +175,51 @@ Resources:
         - !Ref Audience
       ThumbprintList:
         - a031c46782e6e6c661cd4bd10397f7fdc7df0afe
-      Url: !Sub "https://api.bitbucket.org/2.0/workspaces/${WorkspaceNames}"
+      Url: !Sub "https://api.bitbucket.org/2.0/workspaces/${WorkspaceName}/pipelines-config/identity/oidc"
 
-  # IAM Role for Bitbucket
+  # IAM Role for Bitbucket Pipelines
   BitbucketOidcRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Ref IAMRoleName
-      AssumeRolePolicyDocument: !Sub
-        - |
-          {
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Effect": "Allow",
-                "Principal": {
-                  "Federated": "${IamOidcProviderArn}"
-                },
-                "Action": "sts:AssumeRoleWithWebIdentity",
-                "Condition": {
-                  "StringEquals": {
-                    "${OidcProviderEndpoint}:aud": "${Audience}"
-                  },
-                  "StringLike": {
-                    "${OidcProviderEndpoint}:sub": [${RepoPatterns}]
-                  }
-                }
-              }
-            ]
-          }
-        - {
-            "IamOidcProviderArn": !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/api.bitbucket.org/2.0/workspaces/${WorkspaceNames}",
-            "OidcProviderEndpoint": !Sub "api.bitbucket.org/2.0/workspaces/${WorkspaceNames}",
-            "Audience": !Ref Audience,
-            "RepoPatterns": !GetAtt RepoListCustomResource.RepoPatterns
-          }
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt LambdaExecutionRole.Arn
+            Action: sts:AssumeRole
       Policies:
-        - PolicyName: BitbucketOIDCPolicy
+        - PolicyName: S3AccessPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Sid: S3Access
+              - Sid: AllowS3Access
                 Effect: Allow
                 Action:
                   - s3:GetObject
                   - s3:PutObject
                   - s3:DeleteObject
+                  - s3:ListBucket
                 Resource:
+                  - !Sub "arn:aws:s3:::${BucketName}"
                   - !Sub "arn:aws:s3:::${BucketName}/*"
-              - Sid: CloudWatchLogsAccess
-                Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: "*"
 
+  # Custom resource to update trust policy
+  TrustPolicyUpdater:
+    Type: Custom::TrustPolicy
+    Properties:
+      ServiceToken: !GetAtt TrustPolicyProcessor.Arn
+      RoleName: !Ref IAMRoleName
+      WorkspaceName: !Ref WorkspaceName
+      Audience: !Ref Audience
+      RepositoryUUIDs: !Join [ ",", !Ref RepositoryUUIDs ]
+    DependsOn: BitbucketOidcRole
+
+# OUTPUTS SECTION: Useful information from the stack
 Outputs:
-  RoleArn:
-    Description: "The ARN of the IAM Role for Bitbucket OIDC."
+  IAMRoleArn:
+    Description: The ARN of the IAM Role for Bitbucket OIDC.
     Value: !GetAtt BitbucketOidcRole.Arn
     Export:
       Name: BitbucketOidcRoleArn
