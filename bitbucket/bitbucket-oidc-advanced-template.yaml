@@ -27,7 +27,6 @@ Parameters:
 
   Audience:
     Type: String
-    Default: "ari:cloud:bitbucket::workspace/68ba39f8-62ba-4c01-9b43-f59728ecf218"
     Description: >
       The audience (aud) retrieved from Bitbucket's OpenID Connect settings.
       - Example: "ari:cloud:bitbucket::workspace/WORKSPACE_UUID".
@@ -38,7 +37,7 @@ Parameters:
 
   BucketName:
     Type: String
-    Default: "iampjv.co"
+    Default: "MySample-Bucket"
     Description: >
       The name of the S3 bucket to grant access to Bitbucket pipelines.
       - IMPORTANT: Ensure this bucket exists in your AWS account.
