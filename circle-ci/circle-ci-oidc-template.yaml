@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Flexible CloudFormation template for CircleCI OIDC authentication with AWS.
+  Supports granular access controls by allowing restrictions based on organization, project, user, and branch.
+
+Parameters:
+  # CircleCI organization ID
+  # Found under Organization Settings > Organization ID in the CircleCI web app.
+  CircleCIOrgID:
+    Type: String
+    Description: >
+      The CircleCI organization ID. This is a unique identifier for your CircleCI organization.
+      Example: 12345678-90ab-cdef-1234-567890abcdef.
+
+  # CircleCI project ID (optional)
+  # Leave as "*" to allow all projects or specify a project ID to restrict access.
+  # Found under Project Settings > Overview in the CircleCI web app.
+  ProjectID:
+    Type: String
+    Default: "*"
+    Description: >
+      (Optional) The CircleCI project ID to restrict the role. Use '*' to allow all projects.
+      Example: 87654321-abcd-ef90-1234-567890abcdef.
+
+  # CircleCI user ID (optional)
+  # Leave as "*" to allow all users or specify a user ID to restrict access.
+  # Found in the CircleCI system logs or by consulting CircleCI's user management.
+  UserID:
+    Type: String
+    Default: "*"
+    Description: >
+      (Optional) The CircleCI user ID to restrict the role. Use '*' to allow all users.
+      Example: abcdef12-3456-7890-abcd-ef1234567890.
+
+  # Branch name to restrict access (optional)
+  # Use "*" for all branches or specify a branch like "main" or "develop".
+  BranchName:
+    Type: String
+    Default: "*"
+    Description: >
+      The branch name to allow access. Use '*' for all branches or specify a specific branch name.
+      Example: main.
+
+  # Name of the S3 bucket that CircleCI pipelines will access
+  # Ensure this bucket exists in your AWS account.
+  S3BucketName:
+    Type: String
+    Default: "my-circleci-bucket"
+    Description: >
+      The name of the S3 bucket to grant access to CircleCI pipelines.
+      Example: my-circleci-bucket.
+
+  # Name of the IAM role created for CircleCI OIDC integration
+  # You can change this to suit your naming conventions.
+  IAMRoleName:
+    Type: String
+    Default: "CircleCI_OIDC_Role"
+    Description: >
+      Name of the IAM role created for CircleCI OIDC integration.
+      Default: CircleCI_OIDC_Role.
+
+Resources:
+  # OIDC Provider for CircleCI
+  # Configures AWS to trust CircleCI's OIDC identity provider for authentication.
+  CircleCIOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: !Sub "https://oidc.circleci.com/org/${CircleCIOrgID}" # OIDC provider URL unique to your CircleCI organization
+      ClientIdList:
+        - !Ref CircleCIOrgID # Audience claim must match the organization ID
+      ThumbprintList:
+        - "9e99a48a9960b14926bb7f3b6bfa10796a8aef5e" # Fixed thumbprint for CircleCI's OIDC provider
+
+  # IAM Role for CircleCI pipelines
+  # Grants AWS permissions to CircleCI jobs based on OIDC tokens and configurable conditions.
+  CircleCIOIDCRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref IAMRoleName # Name of the IAM role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/oidc.circleci.com/org/${CircleCIOrgID}" # OIDC provider ARN
+            Action: "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              StringEquals:
+                "oidc.circleci.com/org/${CircleCIOrgID}:aud": !Ref CircleCIOrgID # Audience claim must match organization ID
+              StringLike:
+                # Dynamic sub claim based on organization, project, user, and branch parameters
+                "oidc.circleci.com/org/${CircleCIOrgID}:sub": !Sub "org/${CircleCIOrgID}/project/${ProjectID}/user/${UserID}/vcs-origin/*/vcs-ref/refs/heads/${BranchName}"
+
+      Policies:
+        - PolicyName: "CircleCIS3AccessPolicy" # Policy granting S3 access to CircleCI pipelines
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${S3BucketName}" # Grant access to the specified S3 bucket
+                  - !Sub "arn:aws:s3:::${S3BucketName}/*" # Grant access to all objects within the bucket
+
+Outputs:
+  # Outputs for use in other AWS resources or configurations
+  OIDCProviderArn:
+    Description: The ARN of the CircleCI OIDC Provider.
+    Value: !GetAtt CircleCIOIDCProvider.Arn
+
+  IAMRoleArn:
+    Description: The ARN of the IAM role for CircleCI OIDC pipelines.
+    Value: !GetAtt CircleCIOIDCRole.Arn
