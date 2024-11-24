@@ -17,7 +17,7 @@ jobs:
           region: "<< pipeline.parameters.AWS_REGION >>"
           profile_name: "OIDC-PROFILE"
           role_session_name: "circleci-example-session"
-          session_duration: 1800
+          session_duration: "1800"
       - run:
           name: Verify AWS Role Assumption
           command: aws sts get-caller-identity --profile "OIDC-PROFILE"
