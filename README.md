@@ -4,6 +4,12 @@ This repository provides solutions to securely authenticate various CI/CD platfo
 
 ---
 
+## Architecture Diagram
+
+![Architecture Diagram](/static/architecture-diagram-oidc.png)
+
+---
+
 ## Supported CI/CD Platforms
 
 1. **CircleCI with AWS OIDC Authentication**  
@@ -30,12 +36,6 @@ This repository provides solutions to securely authenticate various CI/CD platfo
    - Uses AWS Systems Manager (SSM) hybrid activations to securely register an on-premises Jenkins server with AWS.
    - Provides a CloudFormation template and setup script for SSM registration and configuration.
    - [Go to the Jenkins Hybrid Activation Setup](./jenkins)
-
----
-
-## Architecture Diagram
-
-![Architecture Diagram](/static/architecture-diagram-oidc.png)
 
 ---
 
