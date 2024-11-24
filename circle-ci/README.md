@@ -189,7 +189,7 @@ ProjectBranches: "my-project:main"
 ---
 
 ### Example 5: Mixed Wildcards for Projects and Branches
-ProjectBranches: '*:main,develop|project2:*\'
+ProjectBranches: '**:main,develop|project2:**\'
 
 - **Explanation**:
   - All projects have access to the `main` and `develop` branches.
