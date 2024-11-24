@@ -15,7 +15,7 @@ This repository provides solutions to securely authenticate various CI/CD platfo
 1. **CircleCI with AWS OIDC Authentication**  
    - Leverages OpenID Connect (OIDC) to enable secure, dynamic authentication between CircleCI pipelines and AWS.
    - Provides a CloudFormation template for setting up an OIDC provider and IAM roles with precise access control.
-   - [Go to the CircleCI OIDC Setup](./circleci)
+   - [Go to the CircleCI OIDC Setup](./circle-ci)
 
 2. **GitHub Actions with AWS OIDC Authentication**  
    - Uses OIDC to securely authenticate GitHub Actions workflows with AWS.
