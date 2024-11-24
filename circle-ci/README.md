@@ -126,7 +126,7 @@ jobs:
       # Step 3: Verify AWS role assumption.
       - run:
           name: Verify AWS Role Assumption
-          command: aws sts get-caller-identity --profile OIDC-PROFILE --region us-east-1
+          command: aws sts get-caller-identity --profile OIDC-PROFILE
 
       # Step 4: List the contents of the specified S3 bucket.
       - run:
