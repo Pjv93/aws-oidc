@@ -1,30 +1,24 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   Flexible CloudFormation template for CircleCI OIDC authentication with AWS.
-  Supports granular access controls by allowing restrictions based on organization, project, user, and branch.
+  Uses a Lambda function to dynamically generate the trust policy, enabling secure and customizable integration.
 
 Parameters:
-  # CircleCI organization ID
-  # Found under Organization Settings > Organization ID in the CircleCI web app.
   CircleCIOrgID:
     Type: String
     Description: >
-      The CircleCI organization ID. This is a unique identifier for your CircleCI organization.
+      The CircleCI organization ID. Found under Organization Settings > Organization ID in the CircleCI web app.
       Example: 12345678-90ab-cdef-1234-567890abcdef.
 
-  # CircleCI project ID (optional)
-  # Leave as "*" to allow all projects or specify a project ID to restrict access.
-  # Found under Project Settings > Overview in the CircleCI web app.
-  ProjectID:
+  ProjectBranches:
     Type: String
-    Default: "*"
+    Default: "*:*"
     Description: >
-      (Optional) The CircleCI project ID to restrict the role. Use '*' to allow all projects.
-      Example: 87654321-abcd-ef90-1234-567890abcdef.
+      A pipe-separated list of projects and their associated branches.
+      Format: "project1:branch1,branch2|project2:branch1,branch3|*:*"
+      Use '*' for projects or branches to allow all.
+      Example: "project1:main,develop|project2:feature-xyz"
 
-  # CircleCI user ID (optional)
-  # Leave as "*" to allow all users or specify a user ID to restrict access.
-  # Found in the CircleCI system logs or by consulting CircleCI's user management.
   UserID:
     Type: String
     Default: "*"
@@ -32,85 +26,149 @@ Parameters:
       (Optional) The CircleCI user ID to restrict the role. Use '*' to allow all users.
       Example: abcdef12-3456-7890-abcd-ef1234567890.
 
-  # Branch name to restrict access (optional)
-  # Use "*" for all branches or specify a branch like "main" or "develop".
-  BranchName:
-    Type: String
-    Default: "*"
-    Description: >
-      The branch name to allow access. Use '*' for all branches or specify a specific branch name.
-      Example: main.
-
-  # Name of the S3 bucket that CircleCI pipelines will access
-  # Ensure this bucket exists in your AWS account.
   S3BucketName:
     Type: String
     Default: "my-circleci-bucket"
     Description: >
       The name of the S3 bucket to grant access to CircleCI pipelines.
-      Example: my-circleci-bucket.
 
-  # Name of the IAM role created for CircleCI OIDC integration
-  # You can change this to suit your naming conventions.
   IAMRoleName:
     Type: String
     Default: "CircleCI_OIDC_Role"
     Description: >
       Name of the IAM role created for CircleCI OIDC integration.
-      Default: CircleCI_OIDC_Role.
 
 Resources:
-  # OIDC Provider for CircleCI
-  # Configures AWS to trust CircleCI's OIDC identity provider for authentication.
-  CircleCIOIDCProvider:
-    Type: AWS::IAM::OIDCProvider
+  TrustPolicyProcessor:
+    Type: AWS::Lambda::Function
     Properties:
-      Url: !Sub "https://oidc.circleci.com/org/${CircleCIOrgID}" # OIDC provider URL unique to your CircleCI organization
-      ClientIdList:
-        - !Ref CircleCIOrgID # Audience claim must match the organization ID
-      ThumbprintList:
-        - "9e99a48a9960b14926bb7f3b6bfa10796a8aef5e" # Fixed thumbprint for CircleCI's OIDC provider
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import json
 
-  # IAM Role for CircleCI pipelines
-  # Grants AWS permissions to CircleCI jobs based on OIDC tokens and configurable conditions.
+          def construct_trust_policy(org_id, project_branches, user_id):
+              """
+              Dynamically constructs a trust policy based on the organization ID, projects, branches, and user.
+              """
+              provider_url = f"oidc.circleci.com/org/{org_id}"
+              project_patterns = []
+
+              # Parse projectBranches into patterns
+              for entry in project_branches.split("|"):
+                  project, branches = entry.split(":")
+                  branch_patterns = branches.split(",")
+                  for branch in branch_patterns:
+                      project_patterns.append(
+                          f"org/{org_id}/project/{project}/user/{user_id}/vcs-origin/*/vcs-ref/refs/heads/{branch}"
+                      )
+
+              if "*" in project_branches:
+                  project_patterns.append(f"org/{org_id}/project/*/user/{user_id}/vcs-origin/*/vcs-ref/refs/heads/*")
+
+              # Construct the policy
+              return {
+                  "Version": "2012-10-17",
+                  "Statement": [{
+                      "Effect": "Allow",
+                      "Principal": {
+                          "Federated": f"arn:aws:iam::{boto3.client('sts').get_caller_identity()['Account']}:oidc-provider/{provider_url}"
+                      },
+                      "Action": "sts:AssumeRoleWithWebIdentity",
+                      "Condition": {
+                          "StringEquals": {
+                              f"{provider_url}:aud": org_id
+                          },
+                          "StringLike": {
+                              f"{provider_url}:sub": project_patterns
+                          }
+                      }
+                  }]
+              }
+
+          def handler(event, context):
+              """
+              AWS Lambda function entry point.
+              """
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      org_id = event['ResourceProperties']['CircleCIOrgID']
+                      project_branches = event['ResourceProperties']['ProjectBranches']
+                      user_id = event['ResourceProperties']['UserID']
+                      role_name = event['ResourceProperties']['IAMRoleName']
+
+                      # Construct trust policy
+                      trust_policy = construct_trust_policy(org_id, project_branches, user_id)
+
+                      # Update IAM role with trust policy
+                      iam = boto3.client('iam')
+                      iam.update_assume_role_policy(
+                          RoleName=role_name,
+                          PolicyDocument=json.dumps(trust_policy)
+                      )
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                          'Message': 'Trust policy updated successfully'
+                      })
+                  else:
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(f"Error: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AllowIAMUpdates
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:UpdateAssumeRolePolicy
+                  - sts:GetCallerIdentity
+                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${IAMRoleName}'
+
   CircleCIOIDCRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Ref IAMRoleName # Name of the IAM role
+      RoleName: !Ref IAMRoleName
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/oidc.circleci.com/org/${CircleCIOrgID}" # OIDC provider ARN
-            Action: "sts:AssumeRoleWithWebIdentity"
-            Condition:
-              StringEquals:
-                "oidc.circleci.com/org/${CircleCIOrgID}:aud": !Ref CircleCIOrgID # Audience claim must match organization ID
-              StringLike:
-                # Dynamic sub claim based on organization, project, user, and branch parameters
-                "oidc.circleci.com/org/${CircleCIOrgID}:sub": !Sub "org/${CircleCIOrgID}/project/${ProjectID}/user/${UserID}/vcs-origin/*/vcs-ref/refs/heads/${BranchName}"
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
 
-      Policies:
-        - PolicyName: "CircleCIS3AccessPolicy" # Policy granting S3 access to CircleCI pipelines
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:ListBucket
-                  - s3:GetObject
-                  - s3:PutObject
-                Resource:
-                  - !Sub "arn:aws:s3:::${S3BucketName}" # Grant access to the specified S3 bucket
-                  - !Sub "arn:aws:s3:::${S3BucketName}/*" # Grant access to all objects within the bucket
+  TrustPolicyUpdater:
+    Type: Custom::TrustPolicy
+    Properties:
+      ServiceToken: !GetAtt TrustPolicyProcessor.Arn
+      CircleCIOrgID: !Ref CircleCIOrgID
+      ProjectBranches: !Ref ProjectBranches
+      UserID: !Ref UserID
+      IAMRoleName: !Ref IAMRoleName
 
 Outputs:
-  # Outputs for use in other AWS resources or configurations
+  IAMRoleArn:
+    Description: The ARN of the IAM Role for CircleCI OIDC.
+    Value: !GetAtt CircleCIOIDCRole.Arn
+
   OIDCProviderArn:
     Description: The ARN of the CircleCI OIDC Provider.
     Value: !GetAtt CircleCIOIDCProvider.Arn
-
-  IAMRoleArn:
-    Description: The ARN of the IAM role for CircleCI OIDC pipelines.
-    Value: !GetAtt CircleCIOIDCRole.Arn
