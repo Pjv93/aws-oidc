@@ -1,32 +1,48 @@
-version: 2.1
+version: '2.1'
 
+# Import the AWS CLI Orb, which provides reusable AWS CLI commands and configurations.
 orbs:
-  aws-cli: circleci/aws-cli@5.1.1
+  aws-cli: circleci/aws-cli@5.1
 
 jobs:
-  aws-example:
-    docker:
-      - image: cimg/aws:2022.06
-    environment:
-      AWS_REGION: << pipeline.parameters.AWS_REGION >>
-      AWS_ROLE: << pipeline.parameters.AWS_ROLE >>
+  aws-cli-example:
+    # Use the default executor provided by the AWS CLI orb.
+    executor: aws-cli/default
     steps:
+      # Step 1: Check out the project repository.
+      # This ensures the code is available in the working directory for the job.
       - checkout
+
+      # Step 2: Set up the AWS CLI with OIDC authentication.
+      # This uses the AWS CLI orb's setup command to:
+      # - Assume the IAM role specified in $ROLE_ARN.
+      # - Use the $AWS_REGION for AWS operations.
+      # - Create a profile named 'OIDC-PROFILE' for AWS CLI commands.
       - aws-cli/setup:
-          role_arn: "<< pipeline.parameters.AWS_ROLE >>"
-          region: "<< pipeline.parameters.AWS_REGION >>"
-          profile_name: "OIDC-PROFILE"
-          role_session_name: "circleci-example-session"
-          session_duration: "1800"
+          profile_name: OIDC-PROFILE  # Name of the AWS CLI profile to use for commands.
+          role_arn: $ROLE_ARN         # IAM role to assume for OIDC authentication.
+          region: $AWS_REGION         # AWS region for commands.
+          role_session_name: example-session  # Session name for the assumed role.
+
+      # Step 3: Verify AWS role assumption.
+      # This checks that the IAM role has been successfully assumed by:
+      # - Running 'aws sts get-caller-identity'.
+      # - Using the 'OIDC-PROFILE' created in the setup step.
       - run:
           name: Verify AWS Role Assumption
-          command: aws sts get-caller-identity --profile "OIDC-PROFILE"
+          command: aws sts get-caller-identity --profile OIDC-PROFILE --region us-east-1
+
+      # Step 4: List the contents of the specified S3 bucket.
+      # This demonstrates AWS CLI access using the assumed role by:
+      # - Listing the contents of the 'iampjv.co' S3 bucket.
+      # - Using the 'OIDC-PROFILE' created in the setup step.
       - run:
           name: List Contents of S3 Bucket
-          command: aws s3 ls s3://iampjv.co --profile "OIDC-PROFILE"
+          command: aws s3 ls s3://iampjv.co --profile OIDC-PROFILE
 
 workflows:
-  OIDC-with-AWS:
+  # Define the workflow, which runs the 'aws-cli-example' job.
+  aws-cli:
     jobs:
-      - aws-example:
-          context: aws
+      - aws-cli-example:
+          context: aws  # Use the 'aws' context to load environment variables like $ROLE_ARN and $AWS_REGION.
