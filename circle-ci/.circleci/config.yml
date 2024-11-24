@@ -1,0 +1,32 @@
+version: 2.1
+
+orbs:
+  aws-cli: circleci/aws-cli@5.1.1
+
+jobs:
+  aws-example:
+    docker:
+      - image: cimg/aws:2022.06
+    environment:
+      AWS_REGION: << pipeline.parameters.AWS_REGION >>
+      AWS_ROLE: << pipeline.parameters.AWS_ROLE >>
+    steps:
+      - checkout
+      - aws-cli/setup:
+          role_arn: "<< pipeline.parameters.AWS_ROLE >>"
+          region: "<< pipeline.parameters.AWS_REGION >>"
+          profile_name: "OIDC-PROFILE"
+          role_session_name: "circleci-example-session"
+          session_duration: 1800
+      - run:
+          name: Verify AWS Role Assumption
+          command: aws sts get-caller-identity --profile "OIDC-PROFILE"
+      - run:
+          name: List Contents of S3 Bucket
+          command: aws s3 ls s3://iampjv.co --profile "OIDC-PROFILE"
+
+workflows:
+  OIDC-with-AWS:
+    jobs:
+      - aws-example:
+          context: aws
