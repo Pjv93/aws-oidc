@@ -157,7 +157,6 @@ The `ProjectBranches` parameter in the CloudFormation template allows you to def
 
 ### Example 1: All Projects and All Branches
 ProjectBranches: "*:*"
-
 - **Explanation**: 
   - Allows access to all projects and all branches within the specified CircleCI organization.
 
