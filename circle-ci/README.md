@@ -156,7 +156,8 @@ workflows:
 The `ProjectBranches` parameter in the CloudFormation template allows you to define the projects and their corresponding branches for which the IAM role will be accessible. Below are some example configurations to help you set this up.
 
 ### Example 1: All Projects and All Branches
-ProjectBranches: "*:*"
+ProjectBranches: "\*:\*"
+
 - **Explanation**: 
   - Allows access to all projects and all branches within the specified CircleCI organization.
 
@@ -172,7 +173,7 @@ ProjectBranches: "project1:main,develop|project2:feature-xyz"
 ---
 
 ### Example 3: A Combination of Wildcard and Specific Branches
-ProjectBranches: "project1:*|project2:main"
+ProjectBranches: "project1:\*|project2:main"
 
 - **Explanation**:
   - For `project1`, all branches are allowed.
@@ -189,11 +190,12 @@ ProjectBranches: "my-project:main"
 ---
 
 ### Example 5: Mixed Wildcards for Projects and Branches
-ProjectBranches: '**:main,develop|project2:**\'
+ProjectBranches: "\*:main,develop|project2:\*"
 
 - **Explanation**:
   - All projects have access to the `main` and `develop` branches.
   - For `project2`, all branches are accessible.
+
 
 ---
 
